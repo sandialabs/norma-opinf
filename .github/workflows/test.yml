@@ -48,6 +48,10 @@ jobs:
         pip install --upgrade pip
         pip install . 
 
+    - name: Run tests
+      run: |
+        pytest  # Run tests using pytest
+
     - name: Run norma 
       run: |
         cd $GITHUB_WORKSPACE/norma-regression-tests/single/cuboid/dynamic-opinf-fom
@@ -55,6 +59,4 @@ jobs:
         python make_opinf_models.py
 
 
-#    - name: Run tests
-#      run: |
-#        pytest  # Run tests using pytest
+
