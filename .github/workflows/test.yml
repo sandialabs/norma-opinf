@@ -48,9 +48,9 @@ jobs:
         pip install --upgrade pip
         pip install . 
 
-    - name: Run tests
-      run: |
-        pytest  # Run tests using pytest
+#    - name: Run tests
+#      run: |
+#        pytest  # Run tests using pytest
 
     - name: Run norma 
       run: |

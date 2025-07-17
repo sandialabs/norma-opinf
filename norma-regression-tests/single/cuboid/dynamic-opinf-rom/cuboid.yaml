@@ -2,11 +2,11 @@ type: single
 input mesh file: ../cuboid.g
 output mesh file: cuboid.e
 Exodus output interval: 1
-CSV output interval: 1
-CSV write sidesets: true
+CSV output interval: 10
 
 model:
-  type: solid mechanics
+  type: linear opinf rom
+  model-file: opinf-operator.npz 
   material:
     blocks:
       cuboid: hyperelastic
