@@ -33,7 +33,7 @@ jobs:
     - name: Set up Julia
       uses: julia-actions/setup-julia@v2 
       with:
-        julia-version: '1.6'  # Specify the Julia version
+        version: '1.6'  # Specify the Julia version
 
     - name: Install dependencies
       run: |
