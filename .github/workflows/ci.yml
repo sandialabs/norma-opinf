@@ -24,7 +24,7 @@ jobs:
 
     - name: Clone Norma.jl repository
       run: |
-        git clone -n --depth=1 --filter=tree:0 https://github.com/sandialabs/Norma.jl.git
+        git clone -n --depth=1 --filter=tree:0 -b eparish1/85-opinf-opinf https://github.com/sandialabs/Norma.jl.git
         cd Norma.jl
         git sparse-checkout set --no-cone /src /Project.toml
         git checkout
