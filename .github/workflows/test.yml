@@ -46,14 +46,14 @@ jobs:
 
     - name: Run norma 
       run: |
-        cd $GITHUB_WORKSPACE/examples/single/cuboid/dynamic-opinf-fom 
+        cd $GITHUB_WORKSPACE/norma-regression-tests/single/cuboid/dynamic-opinf-fom
         julia --project=$GITHUB_WORKSPACE/Norma.jl $GITHUB_WORKSPACE/Norma.jl/src/Norma.jl cuboid.yaml
+        python make_opinf_models.py
 
-
-#    - name: Install dependencies
-#      run: |
-#        pip install --upgrade pip
-#        pip install -r requirements.txt  # Install dependencies from requirements.txt
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install . 
 
 #    - name: Run tests
 #      run: |
