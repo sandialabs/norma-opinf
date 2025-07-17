@@ -11,7 +11,8 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest  # Use the latest Ubuntu runner
+    #runs-on: ubuntu-latest  # Use the latest Ubuntu runner
+    runs-on: macos-latest
 
     steps:
     - name: Checkout code
