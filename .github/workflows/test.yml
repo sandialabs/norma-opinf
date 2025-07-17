@@ -14,6 +14,24 @@ jobs:
     runs-on: ubuntu-latest  # Use the latest Ubuntu runner
 
     steps:
+
+    - name: Clone Norma.jl repository
+      run: |
+# Do this sparse clone to avoid long download times
+        git clone -n --depth=1 --filter=tree:0 https://github.com/sandialabs/Norma.jl.git
+        cd Norma.jl
+        git sparse-checkout set --no-cone /src /Project.toml
+        git checkout
+
+
+    - name: Set up Julia
+      uses: actions/setup-julia@v1
+      with:
+        julia-version: '1.6'  # Specify the Julia version
+      run: |
+        cd Norma.jl
+        julia -e 'using Pkg; Pkg.activate("."); Pkg.update();' 
+
     - name: Checkout code
       uses: actions/checkout@v2
 
