@@ -11,12 +11,12 @@ if __name__ == '__main__':
     settings['stop-training-time'] = 100000.0
     settings['training-skip-steps'] = 1
     settings['forcing'] = False
-    settings['truncation-type'] = 'energy'
-    settings['boundary-truncation-type'] = 'energy'
+    settings['truncation-type'] = 'size'
+    settings['boundary-truncation-type'] = 'size'
     settings['regularization-parameter'] = 5e-3
     settings['model-name'] = 'opinf-operator'
-    settings['truncation-value'] = 0.999999
-    settings['boundary-truncation-value'] = 0.999999
+    settings['truncation-value'] = 3 
+    settings['boundary-truncation-value'] = 3 
     settings['trial-space-splitting-type'] = 'split'
     settings['acceleration-computation-type'] = 'finite-difference'
     snapshots_dict = normaopinf.opinf.get_processed_snapshots(settings)
