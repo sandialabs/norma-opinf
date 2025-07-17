@@ -14,9 +14,16 @@ jobs:
     runs-on: ubuntu-latest  # Use the latest Ubuntu runner
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.8'  # Specify the Python version
+
     - name: Clone Norma.jl repository
       run: |
-# Do this sparse clone to avoid long download times
         git clone -n --depth=1 --filter=tree:0 https://github.com/sandialabs/Norma.jl.git
         cd Norma.jl
         git sparse-checkout set --no-cone /src /Project.toml
@@ -30,14 +37,6 @@ jobs:
       run: |
         cd Norma.jl
         julia -e 'using Pkg; Pkg.activate("."); Pkg.update();' 
-
-    - name: Checkout code
-      uses: actions/checkout@v2
-
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.8'  # Specify the Python version
 
     - name: Install dependencies
       run: |
