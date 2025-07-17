@@ -17,7 +17,7 @@ dependencies = [
     'pytest-mpi>=0.6', # released Jan 8th, 2022
     'pytest-timeout',
     'romtools@git+https://github.com/Pressio/rom-tools-and-workflows#egg=develop',
-    'nn-opinf@git+https://github.com/eparish1/nn-opinf.git#egg=main'
+    'nnopinf@git+https://github.com/eparish1/nn-opinf.git'
 ]
 
 [tool.setuptools.dynamic]
