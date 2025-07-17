@@ -46,7 +46,7 @@ jobs:
 
     - name: Run norma 
       run: |
-        cd $GITHUB_WORKSPACE/norma-opinf/examples/single/cuboid/dynamic-opinf-fom 
+        cd $GITHUB_WORKSPACE/examples/single/cuboid/dynamic-opinf-fom 
         julia --project=$GITHUB_WORKSPACE/Norma.jl $GITHUB_WORKSPACE/Norma.jl/src/Norma.jl cuboid.yaml
 
 
