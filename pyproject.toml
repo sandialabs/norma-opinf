@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "normaopinf"
+dynamic = ["version"]
+requires-python = ">=3.8"
+dependencies = [
+#    'h5py',
+    'pyyaml',
+    'numpy',
+    'scipy',
+    'opinf',
+    'matplotlib',
+    'pytest==7.4.4',   # released Dec 31st, 2023
+    'pytest-mpi>=0.6', # released Jan 8th, 2022
+    'pytest-timeout',
+    'romtools@git+https://github.com/Pressio/rom-tools-and-workflows#egg=develop'
+]
+
+[tool.setuptools.dynamic]
+version = {file = "version.txt"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+#https://setuptools.pypa.io/en/latest/userguide/dependency_management.html#optional-dependencies
+[project.optional-dependencies]
+WithMPI = ['mpi4py>3.1.4']
+
