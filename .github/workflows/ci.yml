@@ -56,7 +56,6 @@ jobs:
         julia --project=$GITHUB_WORKSPACE/Norma.jl $GITHUB_WORKSPACE/Norma.jl/src/Norma.jl cuboid.yaml
         python check_solution.py
         python make_opinf_models.py
-#        python check_models.py
         cp opinf-operator.npz ../dynamic-opinf-rom
         cd ../dynamic-opinf-rom
         julia --project=$GITHUB_WORKSPACE/Norma.jl $GITHUB_WORKSPACE/Norma.jl/src/Norma.jl cuboid.yaml
