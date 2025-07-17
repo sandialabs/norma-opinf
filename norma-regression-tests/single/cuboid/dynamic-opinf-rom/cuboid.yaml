@@ -28,15 +28,6 @@ time integrator:
   decrease factor: 0.5
 boundary conditions:
   Dirichlet:
-    - node set: nsx-
-      component: x
-      function: "0.0"
-    - node set: nsy-
-      component: y
-      function: "0.0"
-    - node set: nsz-
-      component: z
-      function: "0.0"
     - node set: nsz+
       component: z
       function: "1.0 * t"
