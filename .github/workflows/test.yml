@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest  # Use the latest Ubuntu runner
 
     steps:
-
     - name: Clone Norma.jl repository
       run: |
 # Do this sparse clone to avoid long download times
