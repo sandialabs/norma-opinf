@@ -54,6 +54,7 @@ jobs:
         cd $GITHUB_WORKSPACE/norma-regression-tests/single/cuboid/dynamic-opinf-fom
         julia --project=$GITHUB_WORKSPACE/Norma.jl $GITHUB_WORKSPACE/Norma.jl/src/Norma.jl cuboid.yaml
         python make_opinf_models.py
+        python check_models.py
         cp opinf-operator.npz ../dynamic-opinf-rom
         cd ../dynamic-opinf-rom
         julia --project=$GITHUB_WORKSPACE/Norma.jl $GITHUB_WORKSPACE/Norma.jl/src/Norma.jl cuboid.yaml
