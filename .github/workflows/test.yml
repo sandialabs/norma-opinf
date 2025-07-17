@@ -43,6 +43,10 @@ jobs:
         cd Norma.jl 
         julia -e 'using Pkg; Pkg.activate("."); Pkg.update();'
 
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install . 
 
     - name: Run norma 
       run: |
@@ -50,10 +54,6 @@ jobs:
         julia --project=$GITHUB_WORKSPACE/Norma.jl $GITHUB_WORKSPACE/Norma.jl/src/Norma.jl cuboid.yaml
         python make_opinf_models.py
 
-    - name: Install dependencies
-      run: |
-        pip install --upgrade pip
-        pip install . 
 
 #    - name: Run tests
 #      run: |
