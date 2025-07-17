@@ -34,9 +34,6 @@ jobs:
       uses: actions/setup-julia@v1
       with:
         julia-version: '1.6'  # Specify the Julia version
-      run: |
-        cd Norma.jl
-        julia -e 'using Pkg; Pkg.activate("."); Pkg.update();' 
 
     - name: Install dependencies
       run: |
