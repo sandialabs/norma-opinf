@@ -13,7 +13,7 @@ if __name__ == '__main__':
     settings['forcing'] = False
     settings['truncation-type'] = 'energy'
     settings['boundary-truncation-type'] = 'energy'
-    settings['regularization-parameter'] = 'automatic' 
+    settings['regularization-parameter'] = 5e-3
     settings['model-name'] = 'opinf-operator'
     settings['truncation-value'] = 0.999999
     settings['boundary-truncation-value'] = 0.999999
