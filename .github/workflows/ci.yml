@@ -7,6 +7,8 @@ on:
   pull_request:
     branches:
       - main  # Change this to your default branch
+  schedule:
+    - cron: '0 0 * * *'  # This will run the workflow every day at midnight UTC
 
 jobs:
   build:
@@ -56,7 +58,8 @@ jobs:
         julia --project=$GITHUB_WORKSPACE/Norma.jl $GITHUB_WORKSPACE/Norma.jl/src/Norma.jl cuboid.yaml
         python check_solution.py
         python make_opinf_models.py
-        cp opinf-operator.npz ../dynamic-opinf-rom
+        python check_models.py
+        cp opinf-operator.npz ../dynamic-opinf-rom/.
         cd ../dynamic-opinf-rom
         julia --project=$GITHUB_WORKSPACE/Norma.jl $GITHUB_WORKSPACE/Norma.jl/src/Norma.jl cuboid.yaml
         python check_solution.py 
