@@ -7,7 +7,8 @@ import subprocess
 
 def test_cuboid(request):
   norma = request.config.getoption("--norma")
-  os.chdir('dynamic-opinf-fom')
+  current_directory = os.path.dirname(os.path.abspath(__file__))
+  os.chdir(current_directory + '/dynamic-opinf-fom')
   #subprocess.run([norma, 'cuboid.yaml'], check=True)
   norma_list = norma.split(' ')
   norma_list.append("cuboid.yaml")
