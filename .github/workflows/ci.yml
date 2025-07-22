@@ -27,7 +27,7 @@ jobs:
 
     - name: Clone Norma.jl repository
       run: |
-        git clone -n --depth=1 --filter=tree:0 -b eparish1/85-opinf-opinf https://github.com/sandialabs/Norma.jl.git
+        git clone -n --depth=1 --filter=tree:0 https://github.com/sandialabs/Norma.jl.git
         cd Norma.jl
         git sparse-checkout set --no-cone /src /Project.toml
         git checkout
@@ -51,21 +51,6 @@ jobs:
         pip install --upgrade pip
         pip install . 
 
-
-    - name: Test cuboid 
-      run: |
-        cd $GITHUB_WORKSPACE/norma-regression-tests/single/cuboid/dynamic-opinf-fom
-        julia --project=$GITHUB_WORKSPACE/Norma.jl $GITHUB_WORKSPACE/Norma.jl/src/Norma.jl cuboid.yaml
-        python check_solution.py
-        python make_opinf_models.py
-        python check_models.py
-        cp opinf-operator.npz ../dynamic-opinf-rom/.
-        cd ../dynamic-opinf-rom
-        julia --project=$GITHUB_WORKSPACE/Norma.jl $GITHUB_WORKSPACE/Norma.jl/src/Norma.jl cuboid.yaml
-        python check_solution.py 
-
-
     - name: Run tests
       run: |
-        pytest  # Run tests using pytest
-
+        pytest --norma="julia --project=$GITHUB_WORKSPACE/Norma.jl $GITHUB_WORKSPACE/Norma.jl/src/Norma.jl"
