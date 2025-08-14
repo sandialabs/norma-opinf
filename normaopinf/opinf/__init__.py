@@ -62,8 +62,6 @@ def train_model(opinf_settings,output_dir,ensemble_id,uhat,uhat_ddots,uhat_sides
         os.makedirs(output_dir)
 
     training_settings = opinf_settings['neural-network-training-settings']
-    training_settings['model-name'] = output_dir 
-    training_settings['output-path'] = output_dir 
 
     print('hi',uhat.shape)
     uhat = reshape_snapshots(uhat) 
@@ -709,10 +707,11 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
 
     ####### NEURAL NETWORK OPINF MODELS
     opinf_neural_network_models = ['neural-network']
-    output_dir = opinf_settings['model-name']
 
     # make output directory
     if opinf_settings['model-type'] in opinf_neural_network_models:
+        output_dir = opinf_settings['neural-network-training-settings']['output-path']
+
         if os.path.isdir(output_dir):
           pass
         else:

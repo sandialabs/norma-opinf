@@ -1,4 +1,6 @@
 import tkinter as tk
+import nnopinf
+import nnopinf.training
 from tkinter import ttk, messagebox
 import os
 import subprocess  # For running the generated Python file
@@ -94,6 +96,22 @@ def collect_settings():
    
     settings['trial-space-splitting-type'] = trial_space_splitting_type_var.get()
     settings['acceleration-computation-type'] = acceleration_computation_type_var.get()
+
+    if settings['model-type'] == 'neural-network':
+      settings['neural-network-training-settings'] = nnopinf.training.get_default_settings()
+      settings['neural-network-training-settings']['model-name'] = model_name_var.get() 
+      settings['neural-network-training-settings']['output-path'] = output_path_var.get() 
+      settings['neural-network-training-settings']['epoch'] = int(num_epochs_var.get())
+      settings['neural-network-training-settings']['batch-size'] = int(batch_size_var.get())
+      settings['neural-network-training-settings']['learning-rate'] = float(learning_rate_var.get())
+      settings['neural-network-training-settings']['weight-decay'] = float(weight_decay_var.get())
+      settings['neural-network-training-settings']['lr-decay'] = float(learning_rate_decay_var.get())
+      if resume_var.get() == 'True' or resume_var.get() == 'true':
+        resume = True
+      else:
+        resume = False
+      settings['neural-network-training-settings']['resume'] = resume 
+      settings['ensemble-size'] = int(ensemble_size_var.get())
     return settings
 
 # Function to run the generated Python file
@@ -153,7 +171,7 @@ training_data_entry.grid(row=2, column=1, padx=5, pady=5)
 #ToolTip(training_data_entry, "Enter the directories for training data.")
 
 ttk.Label(frame, text="Model Type:").grid(row=3, column=0, sticky=tk.W)
-model_type_combo = ttk.Combobox(frame, textvariable=model_type_var, values=['linear', 'quadratic','cubic'])
+model_type_combo = ttk.Combobox(frame, textvariable=model_type_var, values=['linear', 'quadratic','cubic','neural-network'])
 model_type_combo.grid(row=3, column=1, padx=5, pady=5)
 #ToolTip(model_type_combo, "Select the type of model to use.")
 
@@ -214,14 +232,62 @@ model_name_entry.grid(row=14, column=1, padx=5, pady=5)
 #ToolTip(model_name_entry, "Enter the name of the model.")
 
 
+# Add a label for additional settings
+ttk.Label(frame, text="Additional settings for neural-network models").grid(row=15, column=0, columnspan=2, pady=5)
 
+# New input fields for additional options
+ttk.Label(frame, text="Number of Epochs:").grid(row=16, column=0, sticky=tk.W)
+num_epochs_var = tk.StringVar(value='25000')  # Default value
+num_epochs_entry = ttk.Entry(frame, textvariable=num_epochs_var)
+num_epochs_entry.grid(row=16, column=1, padx=5, pady=5)
 
+ttk.Label(frame, text="Batch Size:").grid(row=17, column=0, sticky=tk.W)
+batch_size_var = tk.StringVar(value='500')  # Default value
+batch_size_entry = ttk.Entry(frame, textvariable=batch_size_var)
+batch_size_entry.grid(row=17, column=1, padx=5, pady=5)
+
+ttk.Label(frame, text="Learning Rate:").grid(row=18, column=0, sticky=tk.W)
+learning_rate_var = tk.StringVar(value='1.e-3')  # Default value
+learning_rate_entry = ttk.Entry(frame, textvariable=learning_rate_var)
+learning_rate_entry.grid(row=18, column=1, padx=5, pady=5)
+
+ttk.Label(frame, text="l2 weight regularization:").grid(row=19, column=0, sticky=tk.W)
+weight_decay_var = tk.StringVar(value='1.e-8')  # Default value
+weight_decay_entry = ttk.Entry(frame, textvariable=weight_decay_var)
+weight_decay_entry.grid(row=19, column=1, padx=5, pady=5)
+
+ttk.Label(frame, text="Learning Rate Decay:").grid(row=20, column=0, sticky=tk.W)
+learning_rate_decay_var = tk.StringVar(value='0.9999')  # Default value
+learning_rate_decay_entry = ttk.Entry(frame, textvariable=learning_rate_decay_var)
+learning_rate_decay_entry.grid(row=20, column=1, padx=5, pady=5)
+
+row_no = 21
+ttk.Label(frame, text="Ensemble size:").grid(row=row_no, column=0, sticky=tk.W)
+ensemble_size_var = tk.StringVar(value='5')  # Default value
+ensemble_size_entry = ttk.Entry(frame, textvariable=ensemble_size_var)
+ensemble_size_entry.grid(row=row_no, column=1, padx=5, pady=5)
+
+row_no += 1
+
+ttk.Label(frame, text="Resume Training:").grid(row=row_no, column=0, sticky=tk.W)
+resume_var = tk.StringVar(value='False')  # Default value
+resume_combo = ttk.Combobox(frame, textvariable=resume_var, values=['True', 'False'])
+resume_combo.grid(row=row_no, column=1, padx=5, pady=5)
+
+row_no += 1
+ttk.Label(frame, text="Output path:").grid(row=row_no, column=0, sticky=tk.W)
+output_path_var = tk.StringVar(value='ml-models')  # Default value
+output_path_entry = ttk.Entry(frame, textvariable=output_path_var)
+output_path_entry.grid(row=row_no, column=1, padx=5, pady=5)
+
+row_no += 1
 # Create buttons to generate the Python file
 generate_button = ttk.Button(frame, text="Generate Python File", command=lambda: generate_python_file(collect_settings(), output_filename_var.get()))
-generate_button.grid(row=15, column=0, columnspan=2, pady=10)
+generate_button.grid(row=row_no, column=0, columnspan=2, pady=10)
 
+row_no += 1
 run_button = ttk.Button(frame, text="Generate Python File and Train Model", command=lambda: run_python_file())
-run_button.grid(row=16, column=0, columnspan=2, pady=10)
+run_button.grid(row=row_no, column=0, columnspan=2, pady=10)
 
 # Start the GUI event loop
 
