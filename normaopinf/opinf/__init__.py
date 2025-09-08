@@ -1,5 +1,6 @@
 import numpy as np
 import opinf
+import sys
 import os
 from matplotlib import pyplot as plt
 import normaopinf
@@ -295,6 +296,9 @@ def non_parametric_fit_with_grid_search(opinf_model: opinf.models.ContinuousMode
 
          elif isinstance(opinf_model,normaopinf.opinf.models.ShaneNonParametricQuadraticOpInfModel): 
            opInfForwardModel = normaopinf.opinf.models.QuadraticOpInfRom( -opinf_model.get_stiffness_matrix(), opinf_model.get_exogenous_input_matrix(),-opinf_model.get_quadratic_stiffness_matrix(),opinf_model)
+
+         elif isinstance(opinf_model,normaopinf.opinf.models.ShaneNonParametricCubicOpInfModel): 
+           opInfForwardModel = normaopinf.opinf.models.CubicOpInfRom( -opinf_model.get_stiffness_matrix(), opinf_model.get_exogenous_input_matrix(),-opinf_model.get_quadratic_stiffness_matrix(),-opinf_model.get_cubic_stiffness_matrix(),opinf_model)
          else:
            print('Model type not found, exiting')
            sys.exit()
