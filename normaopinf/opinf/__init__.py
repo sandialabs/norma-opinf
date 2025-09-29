@@ -535,7 +535,7 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
                                                   shifter = None,
                                                   orthogonalizer=romtools.vector_space.utils.EuclideanL2Orthogonalizer(),
                                                   scaler = romtools.vector_space.utils.NoOpScaler())
-                ss_tspace_energy[sideset] = np.append( ss_tspace_energy[sideset] , truncater.get_energy())
+                ss_tspace_energy[sideset] = np.append( ss_tspace_energy[sideset] , my_boundary_truncater.get_energy())
 
             else:
                 comp_trial_space = []
@@ -547,7 +547,7 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
                                               scaler = romtools.vector_space.utils.NoOpScaler())
 
                     comp_trial_space.append(tspace)
-                    ss_tspace_energy[sideset] = np.append( ss_tspace_energy[sideset] , truncater.get_energy())
+                    ss_tspace_energy[sideset] = np.append( ss_tspace_energy[sideset] , my_boundary_truncater.get_energy())
 
                 ss_tspace[sideset] = romtools.CompositeVectorSpace(comp_trial_space)
 
