@@ -522,10 +522,12 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
             print("Truncater " + opinf_settings['boundary-truncation-type'] + " not supported")
 
         ss_tspace = {}
+        ss_tspace_energy = {}
         for sideset in sidesets:
             ## Flatten last axis
             snapshot_shape = np.shape(sideset_snapshots[sideset])
             reshaped_snapshots = np.reshape(sideset_snapshots[sideset],(snapshot_shape[0],snapshot_shape[1],snapshot_shape[2]*snapshot_shape[3]) )
+            ss_tspace_energy[sideset] = np.zeros(0) 
 
             if sideset_snapshots[sideset].shape[0] ==  1 or opinf_settings['trial-space-splitting-type'] == 'combined':
                 ss_tspace[sideset] = romtools.VectorSpaceFromPOD(snapshots=reshaped_snapshots,
@@ -533,6 +535,8 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
                                                   shifter = None,
                                                   orthogonalizer=romtools.vector_space.utils.EuclideanL2Orthogonalizer(),
                                                   scaler = romtools.vector_space.utils.NoOpScaler())
+                ss_tspace_energy[sideset] = np.append( ss_tspace_energy[sideset] , truncater.get_energy())
+
             else:
                 comp_trial_space = []
                 for i in range(0,3):
@@ -543,6 +547,8 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
                                               scaler = romtools.vector_space.utils.NoOpScaler())
 
                     comp_trial_space.append(tspace)
+                    ss_tspace_energy[sideset] = np.append( ss_tspace_energy[sideset] , truncater.get_energy())
+
                 ss_tspace[sideset] = romtools.CompositeVectorSpace(comp_trial_space)
 
               
@@ -570,22 +576,34 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
     snapshot_shape = np.shape(displacement_snapshots)
     reshaped_snapshots = np.reshape(displacement_snapshots,(snapshot_shape[0],snapshot_shape[1],snapshot_shape[2]*snapshot_shape[3]) )
 
+    tspace_energy = np.zeros(0)
     if opinf_settings['trial-space-splitting-type'] == "combined":
         trial_space = romtools.VectorSpaceFromPOD(snapshots=reshaped_snapshots,
                                               truncater=my_truncater,
                                               shifter = None,
                                               orthogonalizer=romtools.vector_space.utils.EuclideanL2Orthogonalizer(),
                                               scaler = romtools.vector_space.utils.NoOpScaler())
+        # Get associted energy criteria for reporting
+        energy = my_truncater.get_energy()
+        tspace_energy = np.append(tspace_energy,energy)
+
     elif opinf_settings['trial-space-splitting-type'] == 'split':
         trial_spaces = []
         for i in range(0,3):
-              trial_space = romtools.VectorSpaceFromPOD(snapshots=reshaped_snapshots[i:i+1],
-                                              truncater=my_truncater,
-                                              shifter = None,
-                                              orthogonalizer=romtools.vector_space.utils.EuclideanL2Orthogonalizer(),
-                                              scaler = romtools.vector_space.utils.NoOpScaler())
-              trial_spaces.append(trial_space)
-    
+            trial_space = romtools.VectorSpaceFromPOD(snapshots=reshaped_snapshots[i:i+1],
+                                            truncater=my_truncater,
+                                            shifter = None,
+                                            orthogonalizer=romtools.vector_space.utils.EuclideanL2Orthogonalizer(),
+                                            scaler = romtools.vector_space.utils.NoOpScaler())
+            trial_spaces.append(trial_space)
+            # Get associted energy criteria if we truncated based on size
+            if opinf_settings['truncation-type'] == "size":
+                energy = my_truncater.get_energy()
+                tspace_energy = np.append(tspace_energy,energy)
+
+            # Get associted energy criteria for reporting
+            energy = my_truncater.get_energy()
+            tspace_energy = np.append(tspace_energy,energy)
         trial_space = romtools.CompositeVectorSpace(trial_spaces)
     else:
         print('trial-space-splitting-type not found') 
@@ -659,6 +677,7 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
            #opinf_model.fit(states=uhat, ddts=uhat_ddots,inputs=reduced_stacked_sideset_snapshots)
            opinf_model.set_solver(opinf_settings['regularization-parameter'])
            regularization_parameter = opinf_settings['regularization-parameter']
+           print('here',np.shape(uhat_ddots))
            opinf_model.fit(states=uhat, ddts=uhat_ddots,inputs=reduced_stacked_sideset_snapshots)
     
         ## Now extract boundary operators and create dictionary to save
@@ -687,9 +706,14 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
         
     
         vals_to_save = sideset_operators 
+        for sideset in sidesets:
+          vals_to_save[sideset + '-energy'] = ss_tspace_energy[sideset]
+
         vals_to_save["regularization-parameter"] = regularization_parameter 
         vals_to_save["basis"] = trial_space.get_basis() 
         vals_to_save["K"] = K
+        vals_to_save["energy-cutoff"] = tspace_energy 
+
         if isinstance(opinf_model,normaopinf.opinf.models.ShaneNonParametricQuadraticOpInfModel):
           H = opinf_model.get_quadratic_stiffness_matrix()
           vals_to_save['H'] = H
