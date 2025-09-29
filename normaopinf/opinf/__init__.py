@@ -707,7 +707,7 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
     
         vals_to_save = sideset_operators 
         for sideset in sidesets:
-          vals_to_save[sideset + '-energy'] = ss_tspace_energy[sideset]
+          vals_to_save[sideset + '-energy-cutoff'] = ss_tspace_energy[sideset]
 
         vals_to_save["regularization-parameter"] = regularization_parameter 
         vals_to_save["basis"] = trial_space.get_basis() 
