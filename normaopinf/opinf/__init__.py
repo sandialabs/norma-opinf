@@ -1,77 +1,136 @@
+"""OpInf utilities and helpers for building ROMs from NORMA output."""
+
+import argparse
+import os
+import sys
+
 import numpy as np
 import opinf
-import sys
-import os
-from matplotlib import pyplot as plt
-import normaopinf
-import normaopinf.readers
-import normaopinf.calculus
-import normaopinf.parser
-import romtools
 import scipy.optimize
-import argparse
-import normaopinf.opinf.models as opinf_models
-import nnopinf
-import nnopinf.operators
-import nnopinf.models
-import nnopinf.training
+from matplotlib import pyplot as plt
 
-# ANSI escape codes for bold and blue text
-BOLD_BLUE ='\033[0;34m'  # Bold blue
-RESET = '\033[0m'         # Reset to default
+import nnopinf
+import nnopinf.models
+import nnopinf.operators
+import nnopinf.training
+import normaopinf
+import normaopinf.calculus
+import normaopinf.opinf.models as opinf_models
+import normaopinf.parser
+import normaopinf.readers
+import romtools
+from nnopinf.operators import siren_activation
+# ANSI escape codes for bold and blue text in CLI output.
+BOLD_BLUE = "\033[0;34m"  # Bold blue
+RESET = "\033[0m"  # Reset to default
 
 def reshape_snapshots(snapshots):
-    snapshots = np.reshape(snapshots,(snapshots.shape[0],np.prod(snapshots.shape[1::])))
-    return snapshots 
+    # Flatten spatial/feature dimensions into a 2D [r, n_samples] array.
+    snapshots = np.reshape(
+        snapshots, (snapshots.shape[0], np.prod(snapshots.shape[1::]))
+    )
+    return snapshots
 
-def train_model(opinf_settings,output_dir,ensemble_id,uhat,uhat_ddots,uhat_sidesets,initialization_model=None):
+
+def train_model(
+    opinf_settings,
+    output_dir,
+    ensemble_id,
+    uhat,
+    uhat_ddots,
+    uhat_sidesets,
+    initialization_model=None,
+):
     rom_dim = uhat.shape[0]
-    n_hidden_layers = 3
-    n_neurons_per_layer = rom_dim
+    n_hidden_layers = opinf_settings.get("n-hidden-layers", 2)
+    n_neurons_per_layer = opinf_settings.get("n-neurons-per-layer", "auto")
+    if n_neurons_per_layer in (None, "auto"):
+        n_neurons_per_layer = 2 * rom_dim
     n_inputs = rom_dim
     n_outputs = rom_dim
+    model_structure = opinf_settings.get("model-structure", "PsdLagrangianOperator")
 
-    ## Design operators for the state
-    NpdMlp = nnopinf.operators.NpdOperator(n_hidden_layers,n_neurons_per_layer,n_inputs,n_outputs)
+    # Design operators for the state.
+    #NpdMlp = nnopinf.operators.NpdOperator(
+    #    n_hidden_layers, n_neurons_per_layer, n_inputs, n_outputs
+    #)
+    x_input = nnopinf.variables.Variable(size=rom_dim,name='x',normalization_strategy='MaxAbs')
+    target = nnopinf.variables.Variable(size=rom_dim,name='y',normalization_strategy='MaxAbs')
+    x_input.set_data(reshape_snapshots(uhat).transpose())
+    target.set_data(reshape_snapshots(uhat_ddots).transpose())
+    name = "stiffness-" + str(ensemble_id)
+    if model_structure == "SpdOperator":
+        NpdMlp = nnopinf.operators.SpdOperator(
+            acts_on=x_input,
+            depends_on=(x_input,),
+            n_hidden_layers=n_hidden_layers,
+            n_neurons_per_layer=n_neurons_per_layer,
+            positive=False,
+            name=name,
+        )
+    elif model_structure == 'PsdLagrangianOperator':
+        NpdMlp = nnopinf.operators.PsdLagrangianOperator(
+            acts_on=x_input,
+            depends_on=(x_input,),
+            n_hidden_layers=n_hidden_layers,
+            n_neurons_per_layer=n_neurons_per_layer,
+            siren_first_layer=False,
+            fourier_features = False,
+            #fourier_variables = ['x'], 
+            positive=False,
+            name=name,
+        )
+    elif model_structure == 'NNOperator':
+        NpdMlp = nnopinf.operators.StandardOperator(
+            n_outputs=rom_dim,
+            depends_on=(x_input,),
+            n_hidden_layers=n_hidden_layers,
+            n_neurons_per_layer=n_neurons_per_layer,
+            #siren_first_layer=False,
+            #fourier_features = True,
+            #fourier_variables = ['x'], 
+            #positive=False,
+            name=name,
+        )
 
-    #SkewMlp = operators.SkewOperator(n_hidden_layers,n_neurons_per_layer,n_inputs,n_outputs)
-    #MatrixMlp = operators.MatrixOperator(n_hidden_layers,n_neurons_per_layer,n_inputs,(n_outputs,n_outputs))
-    #CompositeOperator = operators.CompositeOperator([NpdMlp])
-
-    # Create models for sidesets and wrap for OpInf
-    my_operators = []
+    # Create models for sidesets and wrap for OpInf.
+    my_operators = [NpdMlp]
     sidesets = list(uhat_sidesets.keys())
     inputs = {}
+    my_vars = [x_input]
     for sideset in sidesets:
-      inputs["u-" + sideset] = reshape_snapshots(uhat_sidesets[sideset]).transpose() 
-      #print(uhat_sidesets[sideset].shape)
-      n_sideset_inputs = uhat_sidesets[sideset].shape[0]
-      op = nnopinf.operators.MatrixOperator(n_hidden_layers,n_neurons_per_layer,n_sideset_inputs,(n_outputs,n_sideset_inputs))
-      my_operators.append( nnopinf.models.WrappedOperatorForModel(operator=op,inputs=("u-" + sideset,),name="BC-" + sideset + '-' + str(ensemble_id))  )
+       #inputs["u-" + sideset] = reshape_snapshots(uhat_sidesets[sideset]).transpose()
+        # print(uhat_sidesets[sideset].shape)
+       n_sideset_inputs = uhat_sidesets[sideset].shape[0]
+        ##op = nnopinf.operators.MatrixOperator(
+       #     n_hidden_layers,
+       #     n_neurons_per_layer,
+       #     n_sideset_inputs,
+       #     (n_outputs, n_sideset_inputs),
+       # )
+       sideset_var = nnopinf.variables.Variable(size=n_sideset_inputs,name='u-' + sideset,normalization_strategy='MaxAbs')
+       name = "BC-" + str(sideset) + '-' + str(ensemble_id)
+       op = nnopinf.operators.MatrixOperator(acts_on=sideset_var,depends_on=(sideset_var,),n_outputs=rom_dim,n_hidden_layers=0,n_neurons_per_layer=n_neurons_per_layer,name=name)
+       sideset_var.set_data(  reshape_snapshots(uhat_sidesets[sideset]).transpose() )
+       my_vars.append(sideset_var)
+       my_operators.append(op)
 
-    stiffness_operator =  nnopinf.models.WrappedOperatorForModel(operator=NpdMlp,inputs=("x",),name="stiffness-" + str(ensemble_id))
-    my_operators.append(stiffness_operator)
+    my_model = nnopinf.models.Model(my_operators)
 
-    my_model = nnopinf.models.OpInfModel( my_operators )
-    if initialization_model is not None:
-        my_model.hierarchical_update(initialization_model)
-
-    #Construct training data
+    # Construct training data and train.
     if os.path.isdir(output_dir):
         pass
     else:
         os.makedirs(output_dir)
 
-    training_settings = opinf_settings['neural-network-training-settings']
+    training_settings = opinf_settings["neural-network-training-settings"]
 
-    print('hi',uhat.shape)
-    uhat = reshape_snapshots(uhat) 
-    inputs['x'] = uhat.transpose()
-    nnopinf.training.train(my_model,input_dict=inputs,y=reshape_snapshots(uhat_ddots).transpose(),training_settings=training_settings)
-
-
-
-
+    nnopinf.training.train(
+        my_model,
+        variables = my_vars,
+        y=target,
+        training_settings=training_settings,
+    )
 
 
 
@@ -82,288 +141,453 @@ def train_model(opinf_settings,output_dir,ensemble_id,uhat,uhat_ddots,uhat_sides
 
 
 
-def formatRed(skk): 
-  return "\033[91m {}\033[00m" .format(skk)
+
+
+
+
+def formatRed(skk):
+    return "\033[91m {}\033[00m".format(skk)
 
 def get_acceptable_opinf_settings():
-  acceptable_settings = {}
-  #OpInf model type 
-  acceptable_settings['model-type'] = ['linear','quadratic','cubic','symmetric linear','neural-network']
+    # Central registry of allowed OpInf settings and options.
+    acceptable_settings = {}
+    # OpInf model type.
+    acceptable_settings["model-type"] = [
+        "linear",
+        "quadratic",
+        "cubic",
+        "symmetric linear",
+        "neural-network",
+    ]
+    acceptable_settings["model-structure"] = [
+        "PsdLagrangianOperator",
+        "SpdOperator",
+        "NNOperator"
+    ]
 
-  #If OpInf model has forcing
-  acceptable_settings['forcing'] = [True,False]
+    # If OpInf model has forcing.
+    acceptable_settings["forcing"] = [True, False]
 
-  # How we truncate the bases for the main domain
-  acceptable_settings['truncation-type'] = ['size','energy']
+    # How we truncate the bases for the main domain.
+    acceptable_settings["truncation-type"] = ["size", "energy"]
 
-  # How we truncate the bases for the boundary
-  acceptable_settings['boundary-truncation-type'] = ['size','energy']
+    # How we truncate the bases for the boundary.
+    acceptable_settings["boundary-truncation-type"] = ["size", "energy"]
 
-  # If we make per DOF bases, or if we split. This is applied to both sideset and
-  # volume snapshots
-  acceptable_settings['trial-space-splitting-type'] = ['split','combined']
+    # If we make per DOF bases, or if we split. This is applied to both sideset and
+    # volume snapshots.
+    acceptable_settings["trial-space-splitting-type"] = ["split", "combined"]
 
-  # How we compute the acceleration (either from snapshots or finite difference of displacement)
-  acceptable_settings['acceleration-computation-type'] = ['acceleration-snapshots','finite-difference']
-  return acceptable_settings
+    # How we compute the acceleration (either from snapshots or finite difference).
+    acceptable_settings["acceleration-computation-type"] = [
+        "acceleration-snapshots",
+        "finite-difference",
+    ]
+    return acceptable_settings
 
 
 
 def check_valid_settings_for_getting_snapshots(opinf_settings):
-  required_keys = ['fom-yaml-file','training-data-directories','training-skip-steps','stop-training-time']
+    # Validate inputs required for snapshot loading.
+    required_keys = [
+        "fom-yaml-file",
+        "training-data-directories",
+        "training-skip-steps",
+        "stop-training-time",
+    ]
 
-  # Check that keys exist
-  opinf_keys = list(opinf_settings.keys())
-  for key in required_keys:
-      assert key in opinf_keys, formatRed("Error processing OpInf settings: required key " + str(key) + " was not found")
+    # Check that keys exist.
+    opinf_keys = list(opinf_settings.keys())
+    for key in required_keys:
+        assert key in opinf_keys, formatRed(
+            "Error processing OpInf settings: required key "
+            + str(key)
+            + " was not found"
+        )
 
-  # Check that keys types are correct
-  assert isinstance(opinf_settings['fom-yaml-file'],str) ,"fom-yaml-file must be a string"
-  assert isinstance(opinf_settings['training-data-directories'],list), "training-data-directories must be a list"
-  assert isinstance(opinf_settings['training-skip-steps'],int), "training-skip-steps must be an int"
-  assert (isinstance(opinf_settings['stop-training-time'],float) or opinf_settings['stop-training-time'] == 'end'), "stop-training-time must be a float or 'end'"
-
+    # Check that keys types are correct.
+    assert isinstance(
+        opinf_settings["fom-yaml-file"], str
+    ), "fom-yaml-file must be a string"
+    assert isinstance(
+        opinf_settings["training-data-directories"], list
+    ), "training-data-directories must be a list"
+    assert isinstance(
+        opinf_settings["training-skip-steps"], int
+    ), "training-skip-steps must be an int"
+    assert (
+        isinstance(opinf_settings["stop-training-time"], float)
+        or opinf_settings["stop-training-time"] == "end"
+    ), "stop-training-time must be a float or 'end'"
 
 
 def check_valid_settings(opinf_settings):
-  required_keys = ['fom-yaml-file','training-data-directories','training-skip-steps','model-type','forcing','truncation-type','truncation-value','boundary-truncation-type',
-                   'boundary-truncation-value','regularization-parameter','model-name','trial-space-splitting-type','acceleration-computation-type']
+    # Validate inputs required for building an OpInf model.
+    if "model-structure" not in opinf_settings:
+        opinf_settings["model-structure"] = "PsdLagrangianOperator"
+    if opinf_settings.get("model-type") == "neural-network":
+        if "n-hidden-layers" not in opinf_settings:
+            opinf_settings["n-hidden-layers"] = 2
+        if "n-neurons-per-layer" not in opinf_settings:
+            opinf_settings["n-neurons-per-layer"] = "auto"
+    required_keys = [
+        "fom-yaml-file",
+        "training-data-directories",
+        "training-skip-steps",
+        "model-type",
+        "model-structure",
+        "forcing",
+        "truncation-type",
+        "truncation-value",
+        "boundary-truncation-type",
+        "boundary-truncation-value",
+        "regularization-parameter",
+        "model-name",
+        "trial-space-splitting-type",
+        "acceleration-computation-type",
+    ]
 
-  opinf_keys = list(opinf_settings.keys())
-  for key in required_keys:
-      assert key in opinf_keys, formatRed("Error processing OpInf settings: required key " + str(key) + " was not found")
+    opinf_keys = list(opinf_settings.keys())
+    for key in required_keys:
+        assert key in opinf_keys, formatRed(
+            "Error processing OpInf settings: required key "
+            + str(key)
+            + " was not found"
+        )
 
-  acceptable_settings = get_acceptable_opinf_settings()
+    acceptable_settings = get_acceptable_opinf_settings()
 
-  for key in list(acceptable_settings.keys()):
-      assert opinf_settings[key] in acceptable_settings[key], formatRed("Error processing OpInf settings: key " + str(opinf_settings[key]) + " is not valid \n" +  "Acceptable options are: " + str(acceptable_settings[key]))
-    
-                                                             
-
+    for key in list(acceptable_settings.keys()):
+        assert opinf_settings[key] in acceptable_settings[key], formatRed(
+            "Error processing OpInf settings: key "
+            + str(opinf_settings[key])
+            + " is not valid \n"
+            + "Acceptable options are: "
+            + str(acceptable_settings[key])
+        )
+    if opinf_settings.get("model-type") == "neural-network":
+        assert isinstance(opinf_settings["n-hidden-layers"], int), formatRed(
+            "Error processing OpInf settings: n-hidden-layers must be an int"
+        )
+        assert opinf_settings["n-hidden-layers"] > 0, formatRed(
+            "Error processing OpInf settings: n-hidden-layers must be > 0"
+        )
+        n_neurons = opinf_settings["n-neurons-per-layer"]
+        assert n_neurons == "auto" or isinstance(n_neurons, int), formatRed(
+            "Error processing OpInf settings: n-neurons-per-layer must be an int or 'auto'"
+        )
+        if isinstance(n_neurons, int):
+            assert n_neurons > 0, formatRed(
+                "Error processing OpInf settings: n-neurons-per-layer must be > 0"
+            )
 
 
 def get_example_opinf_settings():
-  settings = {}
-  # Name of FOM yaml file from which to create OpInf ROM
-  settings['fom-yaml-file'] = "torsion-2.yaml"
-  # List of paths to where the training data is
-  settings['training-data-directories'] = [os.getcwd()]
+    # Minimal example config for a single OpInf model.
+    settings = {}
+    # Name of FOM yaml file from which to create OpInf ROM.
+    settings["fom-yaml-file"] = "torsion-2.yaml"
+    # List of paths to where the training data is.
+    settings["training-data-directories"] = [os.getcwd()]
 
-  # how many files to skip when loading training data, e.g., [files = files[::skip]] 
-  settings['training-skip-steps'] = 1
+    # How many files to skip when loading training data, e.g., files[::skip].
+    settings["training-skip-steps"] = 1
 
-  # Type of ROM to create
-  settings['model-type'] = 'linear' 
+    # Type of ROM to create.
+    settings["model-type"] = "linear"
+    settings["model-structure"] = "PsdLagrangianOperator"
 
-  # If ROM has forcing
-  settings['forcing'] =  False
+    # If ROM has forcing.
+    settings["forcing"] = False
 
-  # How to truncate the main domain
-  settings['truncation-type'] = 'energy' 
-  settings['truncation-value'] = 0.9999                      
+    # How to truncate the main domain.
+    settings["truncation-type"] = "energy"
+    settings["truncation-value"] = 0.9999
 
-  # How to truncate the boundary
-  settings['boundary-truncation-type'] =  'energy' 
-  settings['boundary-truncation-value'] = 0.9999
+    # How to truncate the boundary.
+    settings["boundary-truncation-type"] = "energy"
+    settings["boundary-truncation-value"] = 0.9999
 
-  # How to regularize ('automatic' or float for regularization parameter)
-  settings['regularization-parameter'] =  'automatic'
+    # How to regularize ("automatic" or float for regularization parameter).
+    settings["regularization-parameter"] = "automatic"
 
-  # How to split the trial space 
-  settings['trial-space-splitting-type'] = 'split'
+    # How to split the trial space.
+    settings["trial-space-splitting-type"] = "split"
 
-  # How to compute the acceleration target (acceleration-snapshots or finite-difference)
-  settings['acceleration-computation-type'] = 'acceleration-snapshots'
+    # How to compute the acceleration target (accel snapshots or finite-diff).
+    settings["acceleration-computation-type"] = "acceleration-snapshots"
 
-  # Name of the operator
-  settings['model-name'] = 'opinf-operator'
-  return settings
-
+    # Name of the operator.
+    settings["model-name"] = "opinf-operator"
+    return settings
 
 
 def get_default_neural_network_settings():
-  settings = {}
+    # Reserved for default NN settings (in development).
+    settings = {}
 
 
-###In development
-def non_parametric_fit_with_grid_search_beta(opinf_model: opinf.models.ContinuousModel, 
-                                        x: np.ndarray, xdot: np.ndarray, xddot: np.ndarray,
-                                        bcs : np.ndarray, times: np.ndarray , regularization_parameters_to_try:np.ndarray = np.logspace(-5,5,5)):
+# In development.
+def non_parametric_fit_with_grid_search_beta(
+    opinf_model: opinf.models.ContinuousModel,
+    x: np.ndarray,
+    xdot: np.ndarray,
+    xddot: np.ndarray,
+    bcs: np.ndarray,
+    times: np.ndarray,
+    regularization_parameters_to_try: np.ndarray = np.logspace(-5, 5, 5),
+):
+    print("Performing grid search")
+    # Store errors for different regularization parameters.
+    errors = np.zeros(regularization_parameters_to_try.size**3)
 
-   print(f"Performing grid search")
-   ## Store errors for different regularization parameters
-   errors = np.zeros(regularization_parameters_to_try.size**3)
+    # Create an extension of the time window to run ROMs into the future.
+    extend_window_ratio = 1
+    times_extended = times * 1
+    dt = times[1] - times[0]
+    n_steps = times.size
+    for i in range(1, extend_window_ratio):
+        time_window = times_extended[-1] + (times - times[0]) + dt
+        times_extended = np.append(times_extended, time_window)
+    assert np.allclose(times_extended[0:times.size], times)
 
-   # Create an extension of the time window to run ROMs into the future
-   extend_window_ratio = 1
-   times_extended = times*1
-   dt = times[1] - times[0]
-   n_steps = times.size
-   for i in range(1,extend_window_ratio):
-     time_window = times_extended[-1] + (times - times[0]) + dt 
-     times_extended = np.append(times_extended,time_window)
-   assert(np.allclose(times_extended[0:times.size],times))
+    # Loop over regularization parameters, fit, and test.
+    for counter, regularization_parameter in enumerate(regularization_parameters_to_try):
+        for counter2, regularization_parameter2 in enumerate(
+            regularization_parameters_to_try
+        ):
+            for counter3, regularization_parameter3 in enumerate(
+                regularization_parameters_to_try
+            ):
+                # Create regularization solver.
+                if opinf_model.H_ is None:
+                    solver = opinf.lstsq.L2Solver(regularizer=regularization_parameter)
+                else:
+                    solver = opinf.lstsq.L2DecoupledSolver(
+                        regularizer=[
+                            regularization_parameter,
+                            regularization_parameter2,
+                            regularization_parameter3,
+                        ]
+                    )
+                opinf_model.solver = solver
 
-   # Loop over regularization parameters, fit, and test
-   for counter,regularization_parameter in enumerate(regularization_parameters_to_try):
-     for counter2,regularization_parameter2 in enumerate(regularization_parameters_to_try):
-       for counter3,regularization_parameter3 in enumerate(regularization_parameters_to_try):
-         # Create regularization solver
-         if opinf_model.H_ is None: 
-           solver = opinf.lstsq.L2Solver(regularizer=regularization_parameter)
-         else:
-           solver = opinf.lstsq.L2DecoupledSolver(regularizer=[regularization_parameter,regularization_parameter2,regularization_parameter3])
-         opinf_model.solver = solver
-    
-         # Fit     
-         opinf_model.fit(states=x, ddts=xddot,inputs=bcs)
-         u0 = x[:,0]
-    
-         # Create wrapper for forward evaluation of the model
-         if opinf_model.H_ is None: 
-             opInfForwardModel = normaopinf.opinf.models.LinearOpInfRom( opinf_model.A_.entries, opinf_model.B_.entries)
-         elif opinf_model.G_ is None:
-             opInfForwardModel = normaopinf.opinf.models.QuadraticOpInfRom( opinf_model.A_.entries, opinf_model.B_.entries,opinf_model.H_.expand_entries(opinf_model.H_.entries),opinf_model)
-         else:
-             opInfForwardModel = normaopinf.opinf.models.CubicOpInfRom( opinf_model.A_.entries, opinf_model.B_.entries,opinf_model.H_.expand_entries(opinf_model.H_.entries),opinf_model.G_.expand_entries(opinf_model.G_.entries), opinf_model)
+                # Fit.
+                opinf_model.fit(states=x, ddts=xddot, inputs=bcs)
+                u0 = x[:, 0]
 
-         def bc_hook(step):
-           step_to_get = min(step,bcs.shape[1] - 1)
-           return bcs[:,step_to_get]
-    
-         # Test forward simulation
-         test_states = opInfForwardModel.advance_n_steps_newmark( x[:,0], xdot[:,0], xddot[:,0], dt,int( n_steps * extend_window_ratio) ,bc_hook)
-    
-         # Check if we blew up
-         if (np.any(np.isnan(test_states)) or  np.any(np.abs(test_states) > 1e5)):
-           print('Dedected NaN in solution')
-           errors[counter] = 1e10
-         else:
-           errors[counter] = np.linalg.norm(test_states[:,0:times.size] - x) / np.linalg.norm(x)
-    
-         print(f"Error: {errors[counter]:.4e}, Regularization Parameter 1: {regularization_parameter:.4e}, Regularization Parameter 2: {regularization_parameter2:.4e}, Regularization Parameter 3: {regularization_parameter3:.4e}")
-         counter += 1
-   optimal_case = np.nanargmin(errors)
-   optimal_regularization_parameter = regularization_parameters_to_try[optimal_case]
-   best_error = np.nanmin(errors)
-   print('Best regularization parameter = ' + str(optimal_regularization_parameter))
-   print('Error = ' + str(best_error))
-   if opinf_model.H_ is None: 
-     solver = opinf.lstsq.L2Solver(regularizer=optimal_regularization_parameter)
-   else:
-     solver = opinf.lstsq.L2Solver(regularizer=optimal_regularization_parameter)
-     #solver = opinf.lstsq.L2DecoupledSolver(regularizer=[optimal_regularization_parameter,1000.*optimal_regularization_parameter])
+                # Create wrapper for forward evaluation of the model.
+                if opinf_model.H_ is None:
+                    opInfForwardModel = normaopinf.opinf.models.LinearOpInfRom(
+                        opinf_model.A_.entries, opinf_model.B_.entries
+                    )
+                elif opinf_model.G_ is None:
+                    opInfForwardModel = normaopinf.opinf.models.QuadraticOpInfRom(
+                        opinf_model.A_.entries,
+                        opinf_model.B_.entries,
+                        opinf_model.H_.expand_entries(opinf_model.H_.entries),
+                        opinf_model,
+                    )
+                else:
+                    opInfForwardModel = normaopinf.opinf.models.CubicOpInfRom(
+                        opinf_model.A_.entries,
+                        opinf_model.B_.entries,
+                        opinf_model.H_.expand_entries(opinf_model.H_.entries),
+                        opinf_model.G_.expand_entries(opinf_model.G_.entries),
+                        opinf_model,
+                    )
 
-   opinf_model.solver = solver
-   opinf_model.fit(states=x, ddts=xddot,inputs=bcs)
-   return opinf_model
+                def bc_hook(step):
+                    step_to_get = min(step, bcs.shape[1] - 1)
+                    return bcs[:, step_to_get]
 
+                # Test forward simulation.
+                test_states = opInfForwardModel.advance_n_steps_newmark(
+                    x[:, 0],
+                    xdot[:, 0],
+                    xddot[:, 0],
+                    dt,
+                    int(n_steps * extend_window_ratio),
+                    bc_hook,
+                )
 
+                # Check if we blew up.
+                if np.any(np.isnan(test_states)) or np.any(np.abs(test_states) > 1e5):
+                    print("Dedected NaN in solution")
+                    errors[counter] = 1e10
+                else:
+                    errors[counter] = np.linalg.norm(
+                        test_states[:, 0 : times.size] - x
+                    ) / np.linalg.norm(x)
 
+                print(
+                    "Error: "
+                    f"{errors[counter]:.4e}, Regularization Parameter 1: "
+                    f"{regularization_parameter:.4e}, Regularization Parameter 2: "
+                    f"{regularization_parameter2:.4e}, Regularization Parameter 3: "
+                    f"{regularization_parameter3:.4e}"
+                )
+                counter += 1
+    optimal_case = np.nanargmin(errors)
+    optimal_regularization_parameter = regularization_parameters_to_try[optimal_case]
+    best_error = np.nanmin(errors)
+    print("Best regularization parameter = " + str(optimal_regularization_parameter))
+    print("Error = " + str(best_error))
+    if opinf_model.H_ is None:
+        solver = opinf.lstsq.L2Solver(regularizer=optimal_regularization_parameter)
+    else:
+        solver = opinf.lstsq.L2Solver(regularizer=optimal_regularization_parameter)
+        # solver = opinf.lstsq.L2DecoupledSolver(
+        #     regularizer=[optimal_regularization_parameter,
+        #                  1000.0 * optimal_regularization_parameter]
+        # )
 
-def non_parametric_fit_with_grid_search(opinf_model: opinf.models.ContinuousModel, 
-                                        x: np.ndarray, xdot: np.ndarray, xddot: np.ndarray,
-                                        bcs : np.ndarray, times: np.ndarray , regularization_parameters_to_try:np.ndarray = np.logspace(-4,0,40)):
-
-   print(f"Performing grid search")
-   ## Store errors for different regularization parameters
-   errors = np.zeros(len(regularization_parameters_to_try))
-
-   # Create an extension of the time window to run ROMs into the future
-   extend_window_ratio = 1
-   times_extended = times*1
-   dt = times[1] - times[0]
-   n_steps = times.shape[0]
-   for i in range(1,extend_window_ratio):
-     time_window = times_extended[-1] + (times - times[0]) + dt 
-     times_extended = np.append(times_extended,time_window)
-   assert(np.allclose(times_extended[0:times.size],times))
-
-   # Loop over regularization parameters, fit, and test
-   for counter,regularization_parameter in enumerate(regularization_parameters_to_try):
-     opinf_model.set_solver(regularization_parameter)
-
-     # Fit     
-     opinf_model.fit(states=x, ddts=xddot,inputs=bcs)
-
-     n_cases = x.shape[-2]
-     errors[counter] = 0.
-     for i in range(0,n_cases):
-
-         # Create wrapper for forward evaluation of the model
-         if isinstance(opinf_model,normaopinf.opinf.models.ShaneNonParametricOpInfModel):
-           opInfForwardModel = normaopinf.opinf.models.LinearOpInfRom(   -opinf_model.get_stiffness_matrix(), opinf_model.get_exogenous_input_matrix())
-
-         elif isinstance(opinf_model,normaopinf.opinf.models.ShaneNonParametricQuadraticOpInfModel): 
-           opInfForwardModel = normaopinf.opinf.models.QuadraticOpInfRom( -opinf_model.get_stiffness_matrix(), opinf_model.get_exogenous_input_matrix(),-opinf_model.get_quadratic_stiffness_matrix(),opinf_model)
-
-         elif isinstance(opinf_model,normaopinf.opinf.models.ShaneNonParametricCubicOpInfModel): 
-           opInfForwardModel = normaopinf.opinf.models.CubicOpInfRom( -opinf_model.get_stiffness_matrix(), opinf_model.get_exogenous_input_matrix(),-opinf_model.get_quadratic_stiffness_matrix(),-opinf_model.get_cubic_stiffness_matrix(),opinf_model)
-         else:
-           print('Model type not found, exiting')
-           sys.exit()
-
-         def bc_hook(step):
-           step_to_get = min(step,bcs.shape[-1] - 1)
-           return bcs[...,i,step_to_get]
-
-         # Test forward simulation
-         test_states = opInfForwardModel.advance_n_steps_newmark( x[...,i,0], xdot[...,i,0], xddot[...,i,0], dt[i],int( n_steps * extend_window_ratio) ,bc_hook)
-
-         # Check if we blew up
-         if (np.any(np.isnan(test_states)) or  np.any(np.abs(test_states) > 1e5)):
-             print('Dedected NaN in solution')
-             errors[counter] += 1e10
-         else:
-             local_error = np.linalg.norm(test_states[:,0:times.shape[0]] - x[:,i,:]) / np.linalg.norm(x[:,i,:])
-             errors[counter] += local_error
-
-     print(f"Error: {errors[counter]/n_cases:.4e}, Regularization Parameter: {regularization_parameter:.4e}")
-     counter += 1
-   optimal_case = np.nanargmin(errors)
-   optimal_regularization_parameter = regularization_parameters_to_try[optimal_case]
-   best_error = np.nanmin(errors)
-   print('Best regularization parameter = ' + str(optimal_regularization_parameter))
-   print('Error = ' + str(best_error))
-   #   if isinstance(opinf_model,normaopinf.opinf.models.ShaneNonParametricOpInfModel) or isinstance(opinf_model,normaopinf.opinf.models.ShaneNonParametricQuadraticOpInfModel): 
-   opinf_model.set_solver(optimal_regularization_parameter)
-   opinf_model.fit(states=x, ddts=xddot,inputs=bcs)
-   return opinf_model,optimal_regularization_parameter
+    opinf_model.solver = solver
+    opinf_model.fit(states=x, ddts=xddot, inputs=bcs)
+    return opinf_model
 
 
 
-def create_linear_opinf_rom(states,acceleration,times,velocity=None,bcs=None):
+
+def non_parametric_fit_with_grid_search(
+    opinf_model: opinf.models.ContinuousModel,
+    x: np.ndarray,
+    xdot: np.ndarray,
+    xddot: np.ndarray,
+    bcs: np.ndarray,
+    times: np.ndarray,
+    regularization_parameters_to_try: np.ndarray = np.logspace(-4, 0, 40),
+):
+    print("Performing grid search")
+    # Store errors for different regularization parameters.
+    errors = np.zeros(len(regularization_parameters_to_try))
+
+    # Create an extension of the time window to run ROMs into the future.
+    extend_window_ratio = 1
+    times_extended = times * 1
+    dt = times[1] - times[0]
+    n_steps = times.shape[0]
+    for i in range(1, extend_window_ratio):
+        time_window = times_extended[-1] + (times - times[0]) + dt
+        times_extended = np.append(times_extended, time_window)
+    assert np.allclose(times_extended[0:times.size], times)
+
+    # Loop over regularization parameters, fit, and test.
+    for counter, regularization_parameter in enumerate(regularization_parameters_to_try):
+        opinf_model.set_solver(regularization_parameter)
+
+        # Fit.
+        opinf_model.fit(states=x, ddts=xddot, inputs=bcs)
+
+        n_cases = x.shape[-2]
+        errors[counter] = 0.0
+        for i in range(0, n_cases):
+            # Create wrapper for forward evaluation of the model.
+            if isinstance(opinf_model, normaopinf.opinf.models.ShaneNonParametricOpInfModel):
+                opInfForwardModel = normaopinf.opinf.models.LinearOpInfRom(
+                    -opinf_model.get_stiffness_matrix(),
+                    opinf_model.get_exogenous_input_matrix(),
+                )
+
+            elif isinstance(
+                opinf_model, normaopinf.opinf.models.ShaneNonParametricQuadraticOpInfModel
+            ):
+                opInfForwardModel = normaopinf.opinf.models.QuadraticOpInfRom(
+                    -opinf_model.get_stiffness_matrix(),
+                    opinf_model.get_exogenous_input_matrix(),
+                    -opinf_model.get_quadratic_stiffness_matrix(),
+                    opinf_model,
+                )
+
+            elif isinstance(
+                opinf_model, normaopinf.opinf.models.ShaneNonParametricCubicOpInfModel
+            ):
+                opInfForwardModel = normaopinf.opinf.models.CubicOpInfRom(
+                    -opinf_model.get_stiffness_matrix(),
+                    opinf_model.get_exogenous_input_matrix(),
+                    -opinf_model.get_quadratic_stiffness_matrix(),
+                    -opinf_model.get_cubic_stiffness_matrix(),
+                    opinf_model,
+                )
+            else:
+                print("Model type not found, exiting")
+                sys.exit()
+
+            def bc_hook(step):
+                step_to_get = min(step, bcs.shape[-1] - 1)
+                return bcs[..., i, step_to_get]
+
+            # Test forward simulation.
+            test_states = opInfForwardModel.advance_n_steps_newmark(
+                x[..., i, 0],
+                xdot[..., i, 0],
+                xddot[..., i, 0],
+                dt[i],
+                int(n_steps * extend_window_ratio),
+                bc_hook,
+            )
+
+            # Check if we blew up.
+            if np.any(np.isnan(test_states)) or np.any(np.abs(test_states) > 1e5):
+                print("Dedected NaN in solution")
+                errors[counter] += 1e10
+            else:
+                local_error = np.linalg.norm(
+                    test_states[:, 0 : times.shape[0]] - x[:, i, :]
+                ) / np.linalg.norm(x[:, i, :])
+                errors[counter] += local_error
+
+        print(
+            f"Error: {errors[counter] / n_cases:.4e}, Regularization Parameter: "
+            f"{regularization_parameter:.4e}"
+        )
+        counter += 1
+    optimal_case = np.nanargmin(errors)
+    optimal_regularization_parameter = regularization_parameters_to_try[optimal_case]
+    best_error = np.nanmin(errors)
+    print("Best regularization parameter = " + str(optimal_regularization_parameter))
+    print("Error = " + str(best_error))
+    # if isinstance(opinf_model, normaopinf.opinf.models.ShaneNonParametricOpInfModel)
+    # or isinstance(opinf_model, normaopinf.opinf.models.ShaneNonParametricQuadraticOpInfModel):
+    opinf_model.set_solver(optimal_regularization_parameter)
+    opinf_model.fit(states=x, ddts=xddot, inputs=bcs)
+    return opinf_model, optimal_regularization_parameter
+
+
+def create_linear_opinf_rom(states, acceleration, times, velocity=None, bcs=None):
     if velocity is None:
-      velocity = states*0.
+        velocity = states * 0.0
     if bcs is None:
-      bcs = np.zeros(states.shape[1])[None]
+        bcs = np.zeros(states.shape[1])[None]
 
-    opinf_model = opinf.models.ContinuousModel("AB",solver=l2solver)
-    opinf_model = non_parametric_fit_with_grid_search(states,velocity,acceleration,bcs,times)
-    return opinf_model 
+    opinf_model = opinf.models.ContinuousModel("AB", solver=l2solver)
+    opinf_model = non_parametric_fit_with_grid_search(
+        states, velocity, acceleration, bcs, times
+    )
+    return opinf_model
 
 
 def get_bc_sidesets(input_yaml):
-  sidesets = []
-  if 'boundary conditions' in input_yaml:
-    bc_block = input_yaml['boundary conditions']
-    acceptable_bc_types = ['Schwarz overlap','Dirichlet']
-    for bc in bc_block:
-      if 'Dirichlet' in bc:
-        n_bcs = len(bc_block['Dirichlet'])
-        for i in range(0,n_bcs):
-          nodeset = bc_block['Dirichlet'][i]['node set'] 
-          component = bc_block['Dirichlet'][i]['component']
-          name = nodeset + '-' + component
-          sidesets.append(name)
+    sidesets = []
+    if "boundary conditions" in input_yaml:
+        bc_block = input_yaml["boundary conditions"]
+        acceptable_bc_types = ["Schwarz overlap", "Dirichlet"]
+        for bc in bc_block:
+            if "Dirichlet" in bc:
+                n_bcs = len(bc_block["Dirichlet"])
+                for i in range(0, n_bcs):
+                    nodeset = bc_block["Dirichlet"][i]["node set"]
+                    component = bc_block["Dirichlet"][i]["component"]
+                    name = nodeset + "-" + component
+                    sidesets.append(name)
 
-      if 'Schwarz overlap' in bc:
-        n_bcs = len(bc_block['Schwarz overlap'])
-        for i in range(0,n_bcs):
-          name = bc_block['Schwarz overlap'][i]['side set'] 
-          sidesets.append(name)
-    print('Found sidesets: ' + str(sidesets))
-  return sidesets
+            if "Schwarz overlap" in bc:
+                n_bcs = len(bc_block["Schwarz overlap"])
+                for i in range(0, n_bcs):
+                    name = bc_block["Schwarz overlap"][i]["side set"]
+                    sidesets.append(name)
+        print("Found sidesets: " + str(sidesets))
+    return sidesets
 
 
  
@@ -465,6 +689,10 @@ def get_processed_snapshots(opinf_settings):
     snapshots_dict['sidesets'] = sideset_snapshots 
     snapshots_dict['free_dofs'] = free_dofs
     snapshots_dict['times'] = times
+    if "mass-file" in opinf_settings:
+        snapshots_dict["mass_matrix"] = normaopinf.readers.read_mass_matrix_csv(
+            opinf_settings["mass-file"]
+        )
     return snapshots_dict
 
 
@@ -575,13 +803,42 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
 
     snapshot_shape = np.shape(displacement_snapshots)
     reshaped_snapshots = np.reshape(displacement_snapshots,(snapshot_shape[0],snapshot_shape[1],snapshot_shape[2]*snapshot_shape[3]) )
-
+    mass_matrix = snapshots_dict.get("mass_matrix")
+    mass_matrix_dense = None
+    if mass_matrix is not None:
+        if hasattr(mass_matrix, "toarray"):
+            mass_matrix_dense = mass_matrix.toarray()
+        elif isinstance(mass_matrix, normaopinf.readers.COOData):
+            mass_matrix_dense = np.zeros(mass_matrix.shape)
+            for r, c, v in zip(mass_matrix.rows, mass_matrix.cols, mass_matrix.vals):
+                mass_matrix_dense[r, c] = v
+        else:
+            mass_matrix_dense = mass_matrix
+        n_vars = displacement_snapshots.shape[0]
+        n_nodes = displacement_snapshots.shape[1]
+        expected_size = n_vars * n_nodes
+        if mass_matrix_dense.shape[0] == expected_size and mass_matrix_dense.shape[1] == expected_size:
+            # Convert interleaved (node-major) mass matrix to component-major ordering.
+            perm = np.empty(expected_size, dtype=int)
+            for node in range(n_nodes):
+                for var in range(n_vars):
+                    comp_idx = var * n_nodes + node
+                    inter_idx = node * n_vars + var
+                    perm[comp_idx] = inter_idx
+            mass_matrix_dense = mass_matrix_dense[np.ix_(perm, perm)]
+            assert np.allclose(np.diag(mass_matrix_dense)[0:n_nodes],np.diag(mass_matrix_dense)[n_nodes:2*n_nodes])
     tspace_energy = np.zeros(0)
     if opinf_settings['trial-space-splitting-type'] == "combined":
+        if mass_matrix_dense is not None:
+            orthogonalizer = romtools.vector_space.utils.EuclideanMatrixWeightedL2Orthogonalizer(
+                mass_matrix_dense
+            )
+        else:
+            orthogonalizer = romtools.vector_space.utils.EuclideanL2Orthogonalizer()
         trial_space = romtools.VectorSpaceFromPOD(snapshots=reshaped_snapshots,
                                               truncater=my_truncater,
                                               shifter = None,
-                                              orthogonalizer=romtools.vector_space.utils.EuclideanL2Orthogonalizer(),
+                                              orthogonalizer=orthogonalizer,
                                               scaler = romtools.vector_space.utils.NoOpScaler())
         # Get associted energy criteria for reporting
         energy = my_truncater.get_energy()
@@ -589,11 +846,20 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
 
     elif opinf_settings['trial-space-splitting-type'] == 'split':
         trial_spaces = []
+        if mass_matrix_dense is not None:
+            n_by_3 = int(mass_matrix_dense.shape[0] / 3)
+            mass_matrix_single = mass_matrix_dense[0:n_by_3, 0:n_by_3]
         for i in range(0,3):
+            if mass_matrix_dense is not None:
+                orthogonalizer = romtools.vector_space.utils.EuclideanMatrixWeightedL2Orthogonalizer(
+                    mass_matrix_single
+                )
+            else:
+                orthogonalizer = romtools.vector_space.utils.EuclideanL2Orthogonalizer()
             trial_space = romtools.VectorSpaceFromPOD(snapshots=reshaped_snapshots[i:i+1],
                                             truncater=my_truncater,
                                             shifter = None,
-                                            orthogonalizer=romtools.vector_space.utils.EuclideanL2Orthogonalizer(),
+                                            orthogonalizer=orthogonalizer,
                                             scaler = romtools.vector_space.utils.NoOpScaler())
             trial_spaces.append(trial_space)
             # Get associted energy criteria if we truncated based on size
@@ -608,31 +874,58 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
     else:
         print('trial-space-splitting-type not found') 
 
+    if mass_matrix_dense is not None:
+        basis = trial_space.get_basis()
+        basis_matrix = basis.reshape(basis.shape[0] * basis.shape[1], basis.shape[2])
+        gram = basis_matrix.T @ (mass_matrix_dense @ basis_matrix)
+        assert np.allclose(
+            gram, np.eye(gram.shape[0]), rtol=1e-6, atol=1e-6
+        ), "Trial-space basis is not mass-orthonormal"
 
 
     # Project snapshots to ROM space
     snapshot_shape = np.shape(displacement_snapshots)
     reshaped_snapshots = np.reshape(displacement_snapshots,(snapshot_shape[0],snapshot_shape[1],snapshot_shape[2]*snapshot_shape[3]) )
-    uhat = romtools.rom.optimal_l2_projection(reshaped_snapshots,trial_space)
+    if mass_matrix_dense is not None:
+        uhat = romtools.rom.optimal_l2_projection(
+            reshaped_snapshots, trial_space, weighting_matrix=mass_matrix_dense
+        )
+    else:
+        uhat = romtools.rom.optimal_l2_projection(reshaped_snapshots, trial_space)
     uhat = np.reshape(uhat,(uhat.shape[0],snapshot_shape[2],snapshot_shape[3]))
 
     snapshot_shape = np.shape(velocity_snapshots)
     reshaped_snapshots = np.reshape(velocity_snapshots,(snapshot_shape[0],snapshot_shape[1],snapshot_shape[2]*snapshot_shape[3]) )
-    uhat_dots = romtools.rom.optimal_l2_projection(reshaped_snapshots,trial_space)
+    if mass_matrix_dense is not None:
+        uhat_dots = romtools.rom.optimal_l2_projection(
+            reshaped_snapshots, trial_space, weighting_matrix=mass_matrix_dense
+        )
+    else:
+        uhat_dots = romtools.rom.optimal_l2_projection(reshaped_snapshots, trial_space)
     uhat_dots = np.reshape(uhat_dots,(uhat_dots.shape[0],snapshot_shape[2],snapshot_shape[3]))
 
 
     if opinf_settings['acceleration-computation-type'] == 'acceleration-snapshots':
       snapshot_shape = np.shape(acceleration_snapshots)
       reshaped_snapshots = np.reshape(acceleration_snapshots,(snapshot_shape[0],snapshot_shape[1],snapshot_shape[2]*snapshot_shape[3]) )
-      uhat_ddots = romtools.rom.optimal_l2_projection(reshaped_snapshots,trial_space)
+      if mass_matrix_dense is not None:
+        uhat_ddots = romtools.rom.optimal_l2_projection(
+            reshaped_snapshots, trial_space, weighting_matrix=mass_matrix_dense
+        )
+      else:
+        uhat_ddots = romtools.rom.optimal_l2_projection(reshaped_snapshots, trial_space)
       uhat_ddots = np.reshape(uhat_ddots,(uhat_ddots.shape[0],snapshot_shape[2],snapshot_shape[3]))
 
     elif opinf_settings['acceleration-computation-type'] == 'finite-difference':
       u_ddots = normaopinf.calculus.d2dx2(displacement_snapshots,times,method='2nd-order-uniform-dx')
       snapshot_shape = np.shape(u_ddots)
       reshaped_snapshots = np.reshape(u_ddots,(snapshot_shape[0],snapshot_shape[1],snapshot_shape[2]*snapshot_shape[3]) )
-      uhat_ddots = romtools.rom.optimal_l2_projection(reshaped_snapshots,trial_space)
+      if mass_matrix_dense is not None:
+        uhat_ddots = romtools.rom.optimal_l2_projection(
+            reshaped_snapshots, trial_space, weighting_matrix=mass_matrix_dense
+        )
+      else:
+        uhat_ddots = romtools.rom.optimal_l2_projection(reshaped_snapshots, trial_space)
       uhat_ddots = np.reshape(uhat_ddots,(uhat_ddots.shape[0],snapshot_shape[2],snapshot_shape[3]))
 
 
@@ -754,4 +1047,3 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict,opinf_settings):
 
         for ensemble_id in range(opinf_settings['ensemble-size']):
             train_model(opinf_settings,output_dir,ensemble_id,uhat,uhat_ddots,reduced_sideset_snapshots,initialization_model=None)
-

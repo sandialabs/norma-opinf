@@ -1,5 +1,9 @@
+from __future__ import annotations
 import os
 import numpy as np
+from dataclasses import dataclass
+from typing import Iterable, Optional, Tuple
+
 def get_timestamp_str(filename):
   # Naming convenction is 01-time-xxx.csv
   #Split at the ".csv" and grab bit before the . 
@@ -186,3 +190,71 @@ def get_free_dofs(solution_directory: str, base_name : str) -> np.ndarray:
     N_by_three = int(N/3)
     free_dofs = np.reshape(free_dofs,(3,N_by_three),'F') 
     return free_dofs
+
+
+
+@dataclass(frozen=True)
+class COOData:
+    rows: Tuple[int, ...]
+    cols: Tuple[int, ...]
+    vals: Tuple[float, ...]
+    shape: Tuple[int, int]
+
+
+def read_mass_matrix_csv(
+    path: str,
+    shape: Optional[Tuple[int, int]] = None,
+    as_sparse: bool = True,
+):
+    """
+    Read a Norma mass matrix CSV written as `row,col,value` per line (1-based).
+
+    If scipy is available and as_sparse is True, returns a scipy.sparse.coo_matrix.
+    Otherwise returns a COOData object with 0-based indices.
+    """
+    rows = []
+    cols = []
+    vals = []
+
+    with open(path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(",")
+            if len(parts) != 3:
+                raise ValueError(f"Expected 3 columns per line, got {len(parts)}: {line}")
+            r = int(parts[0]) - 1
+            c = int(parts[1]) - 1
+            v = float(parts[2])
+            rows.append(r)
+            cols.append(c)
+            vals.append(v)
+
+    if shape is None:
+        max_r = max(rows) if rows else -1
+        max_c = max(cols) if cols else -1
+        shape = (max_r + 1, max_c + 1)
+
+    if as_sparse:
+        try:
+            import numpy as np
+            from scipy import sparse
+
+            return sparse.coo_matrix((np.array(vals), (np.array(rows), np.array(cols))), shape=shape)
+        except ModuleNotFoundError:
+            pass
+
+    return COOData(tuple(rows), tuple(cols), tuple(vals), shape)
+
+
+def coo_to_dense(data: COOData):
+    dense = [[0.0 for _ in range(data.shape[1])] for _ in range(data.shape[0])]
+    for r, c, v in zip(data.rows, data.cols, data.vals):
+        dense[r][c] = v
+    return dense
+
+
+def iter_entries(data: COOData) -> Iterable[Tuple[int, int, float]]:
+    for r, c, v in zip(data.rows, data.cols, data.vals):
+        yield r, c, v
