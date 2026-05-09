@@ -374,13 +374,13 @@ def get_bc_sidesets_by_type(input_yaml):
           name = bc_block['Schwarz overlap'][i]['side set']
           disp_sidesets.append(name)
 
-      if 'Schwarz nonoverlap' in bc:
-        n_bcs = len(bc_block['Schwarz nonoverlap'])
+      if 'Schwarz DN nonoverlap' in bc:
+        n_bcs = len(bc_block['Schwarz DN nonoverlap'])
         for i in range(0,n_bcs):
-          bc_entry = bc_block['Schwarz nonoverlap'][i]
+          bc_entry = bc_block['Schwarz DN nonoverlap'][i]
           name = bc_entry['side set']
           if 'default BC type' not in bc_entry:
-            raise ValueError('Schwarz nonoverlap boundary condition for side set ' + name +
+            raise ValueError('Schwarz DN nonoverlap boundary condition for side set ' + name +
                              ' must specify "default BC type" (Dirichlet or Neumann).')
           default_bc_type = bc_entry['default BC type']
           if default_bc_type == 'Neumann':
