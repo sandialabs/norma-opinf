@@ -19,7 +19,6 @@ import normaopinf.opinf.models as opinf_models
 import normaopinf.parser
 import normaopinf.readers
 import romtools
-from nnopinf.operators import siren_activation
 # ANSI escape codes for bold and blue text in CLI output.
 BOLD_BLUE = "\033[0;34m"  # Bold blue
 RESET = "\033[0m"  # Reset to default
