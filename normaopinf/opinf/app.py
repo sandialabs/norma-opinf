@@ -1,6 +1,7 @@
 import tkinter as tk
 import nnopinf
 import nnopinf.training
+import normaopinf.opinf
 from tkinter import ttk, messagebox
 import os
 import subprocess  # For running the generated Python file
@@ -106,21 +107,34 @@ def collect_settings():
     settings['acceleration-computation-type'] = acceleration_computation_type_var.get()
 
     if settings['model-type'] == 'neural-network':
-      settings['neural-network-training-settings'] = nnopinf.training.get_default_settings()
-      settings['neural-network-training-settings']['model-name'] = model_name_var.get() 
-      settings['neural-network-training-settings']['output-path'] = output_path_var.get() 
-      settings['neural-network-training-settings']['epoch'] = int(num_epochs_var.get())
-      settings['neural-network-training-settings']['batch-size'] = int(batch_size_var.get())
-      settings['neural-network-training-settings']['learning-rate'] = float(learning_rate_var.get())
-      settings['neural-network-training-settings']['weight-decay'] = float(weight_decay_var.get())
-      settings['neural-network-training-settings']['lr-decay'] = float(learning_rate_decay_var.get())
-      settings['model-structure'] = model_structure_var.get()
-      settings['n-hidden-layers'] = int(n_hidden_layers_var.get())
+      settings['neural-network-training-settings'] = normaopinf.opinf.get_default_neural_network_training_settings()
+      settings['neural-network-training-settings']['model-name'] = model_name_var.get()
+      settings['neural-network-training-settings']['output-path'] = output_path_var.get()
+      optimizer_settings = settings['neural-network-training-settings']['optimizer']
+      optimizer_settings['method'] = optimizer_method_var.get()
+      optimizer_settings['num-epochs'] = int(num_epochs_var.get())
+      optimizer_settings['batch-size'] = int(batch_size_var.get())
+      optimizer_settings['learning-rate'] = float(learning_rate_var.get())
+      optimizer_settings['weight-decay'] = float(weight_decay_var.get())
+      optimizer_settings['lr-decay'] = float(learning_rate_decay_var.get())
+      optimizer_settings['LBFGS-acceleration']['enabled'] = (
+          lbfgs_acceleration_var.get() == 'True'
+          or lbfgs_acceleration_var.get() == 'true'
+      )
+      optimizer_settings['LBFGS-acceleration']['acceleration-epoch-frequency'] = int(
+          lbfgs_acceleration_epoch_frequency_var.get()
+      )
+      optimizer_settings['LBFGS-acceleration']['acceleration-iterations'] = int(
+          lbfgs_acceleration_iterations_var.get()
+      )
+      settings['architecture'] = {}
+      settings['architecture']['model-structure'] = model_structure_var.get()
+      settings['architecture']['n-hidden-layers'] = int(n_hidden_layers_var.get())
       neurons_per_layer = n_neurons_per_layer_var.get().strip()
       if neurons_per_layer.lower() in ("", "auto"):
-        settings['n-neurons-per-layer'] = "auto"
+        settings['architecture']['n-neurons-per-layer'] = "auto"
       else:
-        settings['n-neurons-per-layer'] = int(neurons_per_layer)
+        settings['architecture']['n-neurons-per-layer'] = int(neurons_per_layer)
       if resume_var.get() == 'True' or resume_var.get() == 'true':
         resume = True
       else:
@@ -146,6 +160,10 @@ def run_python_file():
 root = tk.Tk()
 root.title("OpInf Generator")
 root.configure(bg=BG_COLOR)
+root.geometry(f"720x{min(900, root.winfo_screenheight() - 120)}")
+root.minsize(620, 500)
+root.rowconfigure(1, weight=1)
+root.columnconfigure(0, weight=1)
 
 style = ttk.Style()
 style.theme_use("clam")
@@ -173,6 +191,7 @@ root.attributes('-topmost',True)
 # Header
 header_frame = ttk.Frame(root, padding="16 14 16 6")
 header_frame.grid(row=0, column=0, sticky=(tk.W, tk.E))
+header_frame.columnconfigure(0, weight=1)
 ttk.Label(header_frame, text="OpInf Generator", style="Header.TLabel").grid(row=0, column=0, sticky=tk.W)
 ttk.Label(
     header_frame,
@@ -180,9 +199,47 @@ ttk.Label(
     style="Subheader.TLabel",
 ).grid(row=1, column=0, sticky=tk.W)
 
+scroll_container = ttk.Frame(root)
+scroll_container.grid(row=1, column=0, sticky=(tk.N, tk.S, tk.W, tk.E))
+scroll_container.rowconfigure(0, weight=1)
+scroll_container.columnconfigure(0, weight=1)
+
+form_canvas = tk.Canvas(
+    scroll_container,
+    bg=BG_COLOR,
+    borderwidth=0,
+    highlightthickness=0,
+)
+form_canvas.grid(row=0, column=0, sticky=(tk.N, tk.S, tk.W, tk.E))
+
+form_scrollbar = ttk.Scrollbar(
+    scroll_container,
+    orient=tk.VERTICAL,
+    command=form_canvas.yview,
+)
+form_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+form_canvas.configure(yscrollcommand=form_scrollbar.set)
+
 # Create a frame for the dropdowns
-frame = ttk.Frame(root, padding="12 10 12 16", style="Card.TFrame")
-frame.grid(row=1, column=0, sticky=(tk.W, tk.E))
+frame = ttk.Frame(form_canvas, padding="12 10 12 16", style="Card.TFrame")
+form_window = form_canvas.create_window((0, 0), window=frame, anchor=tk.NW)
+
+
+def _update_scroll_region(event=None):
+    form_canvas.configure(scrollregion=form_canvas.bbox("all"))
+
+
+def _resize_form_width(event):
+    form_canvas.itemconfigure(form_window, width=event.width)
+
+
+def _on_mousewheel(event):
+    form_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+
+frame.bind("<Configure>", _update_scroll_region)
+form_canvas.bind("<Configure>", _resize_form_width)
+form_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 frame.columnconfigure(0, weight=1)
 frame.columnconfigure(1, weight=1)
 
@@ -321,32 +378,63 @@ n_neurons_per_layer_var = tk.StringVar(value='auto')
 n_neurons_per_layer_entry = ttk.Entry(frame, textvariable=n_neurons_per_layer_var, width=32)
 n_neurons_per_layer_entry.grid(row=19, column=1, padx=5, pady=5)
 
-ttk.Label(frame, text="Number of Epochs:").grid(row=20, column=0, sticky=tk.W)
+ttk.Label(frame, text="Optimizer Method:").grid(row=20, column=0, sticky=tk.W)
+optimizer_method_var = tk.StringVar(value='ADAM')
+optimizer_method_combo = ttk.Combobox(
+    frame,
+    textvariable=optimizer_method_var,
+    values=['ADAM', 'LBFGS', 'SR1', 'TR-NEWTON', 'MIXED'],
+    width=30,
+)
+optimizer_method_combo.grid(row=20, column=1, padx=5, pady=5)
+
+ttk.Label(frame, text="Number of Epochs:").grid(row=21, column=0, sticky=tk.W)
 num_epochs_var = tk.StringVar(value='25000')  # Default value
 num_epochs_entry = ttk.Entry(frame, textvariable=num_epochs_var, width=32)
-num_epochs_entry.grid(row=20, column=1, padx=5, pady=5)
+num_epochs_entry.grid(row=21, column=1, padx=5, pady=5)
 
-ttk.Label(frame, text="Batch Size:").grid(row=21, column=0, sticky=tk.W)
+ttk.Label(frame, text="Batch Size:").grid(row=22, column=0, sticky=tk.W)
 batch_size_var = tk.StringVar(value='500')  # Default value
 batch_size_entry = ttk.Entry(frame, textvariable=batch_size_var, width=32)
-batch_size_entry.grid(row=21, column=1, padx=5, pady=5)
+batch_size_entry.grid(row=22, column=1, padx=5, pady=5)
 
-ttk.Label(frame, text="Learning Rate:").grid(row=22, column=0, sticky=tk.W)
+ttk.Label(frame, text="Learning Rate:").grid(row=23, column=0, sticky=tk.W)
 learning_rate_var = tk.StringVar(value='1.e-3')  # Default value
 learning_rate_entry = ttk.Entry(frame, textvariable=learning_rate_var, width=32)
-learning_rate_entry.grid(row=22, column=1, padx=5, pady=5)
+learning_rate_entry.grid(row=23, column=1, padx=5, pady=5)
 
-ttk.Label(frame, text="l2 weight regularization:").grid(row=23, column=0, sticky=tk.W)
+ttk.Label(frame, text="l2 weight regularization:").grid(row=24, column=0, sticky=tk.W)
 weight_decay_var = tk.StringVar(value='1.e-8')  # Default value
 weight_decay_entry = ttk.Entry(frame, textvariable=weight_decay_var, width=32)
-weight_decay_entry.grid(row=23, column=1, padx=5, pady=5)
+weight_decay_entry.grid(row=24, column=1, padx=5, pady=5)
 
-ttk.Label(frame, text="Learning Rate Decay:").grid(row=24, column=0, sticky=tk.W)
+ttk.Label(frame, text="Learning Rate Decay:").grid(row=25, column=0, sticky=tk.W)
 learning_rate_decay_var = tk.StringVar(value='0.9999')  # Default value
 learning_rate_decay_entry = ttk.Entry(frame, textvariable=learning_rate_decay_var, width=32)
-learning_rate_decay_entry.grid(row=24, column=1, padx=5, pady=5)
+learning_rate_decay_entry.grid(row=25, column=1, padx=5, pady=5)
 
-row_no = 25
+ttk.Label(frame, text="LBFGS Acceleration:").grid(row=26, column=0, sticky=tk.W)
+lbfgs_acceleration_var = tk.StringVar(value='True')
+lbfgs_acceleration_combo = ttk.Combobox(
+    frame, textvariable=lbfgs_acceleration_var, values=['True', 'False'], width=30
+)
+lbfgs_acceleration_combo.grid(row=26, column=1, padx=5, pady=5)
+
+ttk.Label(frame, text="LBFGS Acceleration Epoch Frequency:").grid(row=27, column=0, sticky=tk.W)
+lbfgs_acceleration_epoch_frequency_var = tk.StringVar(value='1000')
+lbfgs_acceleration_epoch_frequency_entry = ttk.Entry(
+    frame, textvariable=lbfgs_acceleration_epoch_frequency_var, width=32
+)
+lbfgs_acceleration_epoch_frequency_entry.grid(row=27, column=1, padx=5, pady=5)
+
+ttk.Label(frame, text="LBFGS Acceleration Iterations:").grid(row=28, column=0, sticky=tk.W)
+lbfgs_acceleration_iterations_var = tk.StringVar(value='50')
+lbfgs_acceleration_iterations_entry = ttk.Entry(
+    frame, textvariable=lbfgs_acceleration_iterations_var, width=32
+)
+lbfgs_acceleration_iterations_entry.grid(row=28, column=1, padx=5, pady=5)
+
+row_no = 29
 ttk.Label(frame, text="Ensemble size:").grid(row=row_no, column=0, sticky=tk.W)
 ensemble_size_var = tk.StringVar(value='5')  # Default value
 ensemble_size_entry = ttk.Entry(frame, textvariable=ensemble_size_var, width=32)

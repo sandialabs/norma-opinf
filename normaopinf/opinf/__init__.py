@@ -37,13 +37,14 @@ def train_model(
     initialization_model=None,
 ):
     rom_dim = uhat.shape[0]
-    n_hidden_layers = opinf_settings.get("n-hidden-layers", 2)
-    n_neurons_per_layer = opinf_settings.get("n-neurons-per-layer", "auto")
+    architecture_settings = opinf_settings["architecture"]
+    n_hidden_layers = architecture_settings["n-hidden-layers"]
+    n_neurons_per_layer = architecture_settings["n-neurons-per-layer"]
     if n_neurons_per_layer in (None, "auto"):
         n_neurons_per_layer = 2 * rom_dim
     n_inputs = rom_dim
     n_outputs = rom_dim
-    model_structure = opinf_settings.get("model-structure", "PsdLagrangianOperator")
+    model_structure = architecture_settings["model-structure"]
 
     # Design operators for the state.
     #NpdMlp = nnopinf.operators.NpdOperator(
@@ -111,7 +112,9 @@ def train_model(
     else:
         os.makedirs(output_dir)
 
-    training_settings = opinf_settings["neural-network-training-settings"]
+    training_settings = prepare_nnopinf_training_settings(
+        opinf_settings["neural-network-training-settings"]
+    )
 
     nnopinf.training.train(
         my_model,
@@ -132,10 +135,6 @@ def get_acceptable_opinf_settings():
   #OpInf model type
   acceptable_settings['model-type'] = ['linear','quadratic','cubic','symmetric linear','neural-network']
 
-  acceptable_settings["model-structure"] = [
-        "PsdLagrangianOperator",
-        "SpdOperator",
-        "NNOperator"]
   #If OpInf model has forcing
   acceptable_settings['forcing'] = [True,False]
 
@@ -158,6 +157,170 @@ def get_acceptable_opinf_settings():
   return acceptable_settings
 
 
+def get_acceptable_architecture_settings():
+  acceptable_settings = {}
+  acceptable_settings["model-structure"] = [
+        "PsdLagrangianOperator",
+        "SpdOperator",
+        "NNOperator"]
+  return acceptable_settings
+
+
+def get_acceptable_optimizer_methods():
+  return ["ADAM", "LBFGS", "SR1", "TR-NEWTON", "MIXED"]
+
+
+def get_default_neural_network_training_settings():
+  settings = deepcopy(nnopinf.training.get_default_settings())
+  optimizer_settings = {
+      "method": settings.pop("optimizer"),
+      "num-epochs": settings.pop("num-epochs"),
+      "batch-size": settings.pop("batch-size"),
+      "learning-rate": settings.pop("learning-rate"),
+      "weight-decay": settings.pop("weight-decay"),
+      "lr-decay": settings.pop("lr-decay"),
+      "LBFGS-acceleration": {
+          "enabled": settings.pop("LBFGS-acceleration"),
+          "acceleration-epoch-frequency": settings.pop(
+              "LBFGS-acceleration-epoch-frequency"
+          ),
+          "acceleration-iterations": settings.pop(
+              "LBFGS-acceleration-iterations"
+          ),
+      },
+  }
+  settings["optimizer"] = optimizer_settings
+  return settings
+
+
+def prepare_nnopinf_training_settings(training_settings):
+  prepared_settings = deepcopy(training_settings)
+  optimizer_settings = prepared_settings.pop("optimizer")
+  lbfgs_settings = optimizer_settings.get("LBFGS-acceleration", {})
+  prepared_settings["optimizer"] = optimizer_settings["method"]
+  prepared_settings["num-epochs"] = optimizer_settings["num-epochs"]
+  prepared_settings["batch-size"] = optimizer_settings["batch-size"]
+  prepared_settings["learning-rate"] = optimizer_settings["learning-rate"]
+  prepared_settings["weight-decay"] = optimizer_settings["weight-decay"]
+  prepared_settings["lr-decay"] = optimizer_settings["lr-decay"]
+  prepared_settings["LBFGS-acceleration"] = lbfgs_settings.get("enabled", False)
+  prepared_settings["LBFGS-acceleration-epoch-frequency"] = lbfgs_settings.get(
+      "acceleration-epoch-frequency", 1000
+  )
+  prepared_settings["LBFGS-acceleration-iterations"] = lbfgs_settings.get(
+      "acceleration-iterations", 50
+  )
+  return prepared_settings
+
+
+def check_valid_neural_network_training_settings(opinf_settings):
+  assert "neural-network-training-settings" in opinf_settings, formatRed(
+      "Error processing OpInf settings: required key neural-network-training-settings was not found"
+  )
+  training_settings = opinf_settings["neural-network-training-settings"]
+  assert isinstance(training_settings, dict), formatRed(
+      "Error processing OpInf settings: neural-network-training-settings must be a dict"
+  )
+  old_training_keys = [
+      "num-epochs",
+      "batch-size",
+      "learning-rate",
+      "weight-decay",
+      "lr-decay",
+      "LBFGS-acceleration",
+      "LBFGS-acceleration-epoch-frequency",
+      "LBFGS-acceleration-iterations",
+  ]
+  for key in old_training_keys:
+      assert key not in training_settings, formatRed(
+          "Error processing OpInf settings: "
+          + str(key)
+          + " must be under neural-network-training-settings/optimizer"
+      )
+  for key in ["model-name", "output-path", "resume", "optimizer"]:
+      assert key in training_settings, formatRed(
+          "Error processing OpInf settings: required neural-network-training-settings key "
+          + str(key)
+          + " was not found"
+      )
+
+  optimizer_settings = training_settings["optimizer"]
+  assert isinstance(optimizer_settings, dict), formatRed(
+      "Error processing OpInf settings: optimizer must be a dict"
+  )
+  for key in ["LBFGS-acceleration-epoch-frequency", "LBFGS-acceleration-iterations"]:
+      assert key not in optimizer_settings, formatRed(
+          "Error processing OpInf settings: "
+          + str(key)
+          + " must be under optimizer/LBFGS-acceleration"
+      )
+  for key in [
+      "method",
+      "num-epochs",
+      "batch-size",
+      "learning-rate",
+      "weight-decay",
+      "lr-decay",
+  ]:
+      assert key in optimizer_settings, formatRed(
+          "Error processing OpInf settings: required optimizer key "
+          + str(key)
+          + " was not found"
+      )
+
+  assert optimizer_settings["method"] in get_acceptable_optimizer_methods(), formatRed(
+      "Error processing OpInf settings: optimizer method "
+      + str(optimizer_settings["method"])
+      + " is not valid \nAcceptable options are: "
+      + str(get_acceptable_optimizer_methods())
+  )
+  assert isinstance(optimizer_settings["num-epochs"], int), formatRed(
+      "Error processing OpInf settings: num-epochs must be an int"
+  )
+  assert optimizer_settings["num-epochs"] > 0, formatRed(
+      "Error processing OpInf settings: num-epochs must be > 0"
+  )
+  assert isinstance(optimizer_settings["batch-size"], int), formatRed(
+      "Error processing OpInf settings: batch-size must be an int"
+  )
+  assert optimizer_settings["batch-size"] > 0, formatRed(
+      "Error processing OpInf settings: batch-size must be > 0"
+  )
+  for key in ["learning-rate", "weight-decay", "lr-decay"]:
+      assert isinstance(optimizer_settings[key], (int, float)), formatRed(
+          "Error processing OpInf settings: " + str(key) + " must be numeric"
+      )
+
+  if optimizer_settings["method"] == "ADAM":
+      assert "LBFGS-acceleration" in optimizer_settings, formatRed(
+          "Error processing OpInf settings: required optimizer key LBFGS-acceleration was not found"
+      )
+      lbfgs_settings = optimizer_settings["LBFGS-acceleration"]
+      assert isinstance(lbfgs_settings, dict), formatRed(
+          "Error processing OpInf settings: LBFGS-acceleration must be a dict"
+      )
+      for key in [
+          "enabled",
+          "acceleration-epoch-frequency",
+          "acceleration-iterations",
+      ]:
+          assert key in lbfgs_settings, formatRed(
+              "Error processing OpInf settings: required LBFGS-acceleration key "
+              + str(key)
+              + " was not found"
+          )
+      assert isinstance(lbfgs_settings["enabled"], bool), formatRed(
+          "Error processing OpInf settings: LBFGS-acceleration enabled must be a bool"
+      )
+      for key in ["acceleration-epoch-frequency", "acceleration-iterations"]:
+          assert isinstance(lbfgs_settings[key], int), formatRed(
+              "Error processing OpInf settings: " + str(key) + " must be an int"
+          )
+          assert lbfgs_settings[key] > 0, formatRed(
+              "Error processing OpInf settings: " + str(key) + " must be > 0"
+          )
+
+
 
 def check_valid_settings_for_getting_snapshots(opinf_settings):
   required_keys = ['fom-yaml-file','training-data-directories','training-skip-steps','stop-training-time']
@@ -175,8 +338,6 @@ def check_valid_settings_for_getting_snapshots(opinf_settings):
 
 
 def check_valid_settings(opinf_settings):
-  if "model-structure" not in opinf_settings:
-      opinf_settings["model-structure"] = "PsdLagrangianOperator"
   if 'input-scale' not in opinf_settings:
       opinf_settings['input-scale'] = 'none'
   if 'save-sideset-bases' not in opinf_settings:
@@ -200,13 +361,40 @@ def check_valid_settings(opinf_settings):
 
 
   if opinf_settings.get("model-type") == "neural-network":
-        assert isinstance(opinf_settings["n-hidden-layers"], int), formatRed(
+        assert "architecture" in opinf_settings, formatRed(
+            "Error processing OpInf settings: required key architecture was not found"
+        )
+        architecture_settings = opinf_settings["architecture"]
+        assert isinstance(architecture_settings, dict), formatRed(
+            "Error processing OpInf settings: architecture must be a dict"
+        )
+        required_architecture_keys = [
+            "model-structure",
+            "n-hidden-layers",
+            "n-neurons-per-layer",
+        ]
+        for key in required_architecture_keys:
+            assert key in architecture_settings, formatRed(
+                "Error processing OpInf settings: required architecture key "
+                + str(key)
+                + " was not found"
+            )
+        acceptable_architecture_settings = get_acceptable_architecture_settings()
+        for key in list(acceptable_architecture_settings.keys()):
+            assert architecture_settings[key] in acceptable_architecture_settings[key], formatRed(
+                "Error processing OpInf settings: architecture key "
+                + str(architecture_settings[key])
+                + " is not valid \n"
+                + "Acceptable options are: "
+                + str(acceptable_architecture_settings[key])
+            )
+        assert isinstance(architecture_settings["n-hidden-layers"], int), formatRed(
             "Error processing OpInf settings: n-hidden-layers must be an int"
         )
-        assert opinf_settings["n-hidden-layers"] > 0, formatRed(
+        assert architecture_settings["n-hidden-layers"] > 0, formatRed(
             "Error processing OpInf settings: n-hidden-layers must be > 0"
         )
-        n_neurons = opinf_settings["n-neurons-per-layer"]
+        n_neurons = architecture_settings["n-neurons-per-layer"]
         assert n_neurons == "auto" or isinstance(n_neurons, int), formatRed(
             "Error processing OpInf settings: n-neurons-per-layer must be an int or 'auto'"
         )
@@ -214,6 +402,7 @@ def check_valid_settings(opinf_settings):
             assert n_neurons > 0, formatRed(
                 "Error processing OpInf settings: n-neurons-per-layer must be > 0"
             )
+        check_valid_neural_network_training_settings(opinf_settings)
 
 
 def get_example_opinf_settings():
@@ -228,6 +417,11 @@ def get_example_opinf_settings():
 
   # Type of ROM to create
   settings['model-type'] = 'linear'
+  settings['architecture'] = {
+      'model-structure': 'PsdLagrangianOperator',
+      'n-hidden-layers': 2,
+      'n-neurons-per-layer': 'auto',
+  }
   # How to scale sideset displacement/force inputs
   settings['input-scale'] = 'none'
 
@@ -258,7 +452,7 @@ def get_example_opinf_settings():
 
 
 def get_default_neural_network_settings():
-  settings = {}
+  return get_default_neural_network_training_settings()
 
 
 ###In development
