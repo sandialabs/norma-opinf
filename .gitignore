@@ -1,1 +1,9 @@
 __pycache__/
+*.csv
+*.png
+*.pdf
+*.e
+*.log
+*.txt
+*.out
+*.npz
