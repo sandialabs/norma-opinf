@@ -19,6 +19,10 @@ time integrator:
   type: Newmark
   β: 0.25
   γ: 0.5
+  decrease factor: 0.5
+  increase factor: 1.2
+  minimum time step: 1.0e-6
+  maximum time step: 0.01
 boundary conditions:
   Dirichlet:
     - node set: sym_x_upper
@@ -41,6 +45,10 @@ solver:
   type: Hessian minimizer
   step: full Newton
   # use line search: true
+  use line search: true
+  line search backtrack factor: 0.5
+  line search decrease factor: 1.0e-04
+  line search maximum iterations: 16
   minimum iterations: 1
   maximum iterations: 16
   relative tolerance: 1.0e-07

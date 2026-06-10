@@ -1,7 +1,8 @@
 type: single
 input mesh file: ../../../../../../torsion-hex-conformal-1.g
 output mesh file: torsion-1.e
-CSV write sidesets: false
+CSV output interval: 2.0e-6
+CSV write sidesets: true
 model:
   type: solid mechanics
   stress recovery: consistent
