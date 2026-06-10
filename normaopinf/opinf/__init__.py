@@ -1,3 +1,4 @@
+import argparse
 import sys
 import os
 from copy import deepcopy
@@ -25,66 +26,109 @@ def reshape_snapshots(snapshots):
     snapshots = np.reshape(snapshots,(snapshots.shape[0],np.prod(snapshots.shape[1::])))
     return snapshots
 
-def train_model(opinf_settings,output_dir,ensemble_id,uhat,uhat_ddots,uhat_sidesets,initialization_model=None):
+
+def train_model(
+    opinf_settings,
+    output_dir,
+    ensemble_id,
+    uhat,
+    uhat_ddots,
+    uhat_sidesets,
+    initialization_model=None,
+):
     rom_dim = uhat.shape[0]
-    n_hidden_layers = 3
-    n_neurons_per_layer = rom_dim
+    architecture_settings = opinf_settings["architecture"]
+    n_hidden_layers = architecture_settings["n-hidden-layers"]
+    n_neurons_per_layer = architecture_settings["n-neurons-per-layer"]
+    if n_neurons_per_layer in (None, "auto"):
+        n_neurons_per_layer = 2 * rom_dim
     n_inputs = rom_dim
     n_outputs = rom_dim
+    model_structure = architecture_settings["model-structure"]
 
-    ## Design operators for the state
-    NpdMlp = nnopinf.operators.NpdOperator(n_hidden_layers,n_neurons_per_layer,n_inputs,n_outputs)
+    # Design operators for the state.
+    #NpdMlp = nnopinf.operators.NpdOperator(
+    #    n_hidden_layers, n_neurons_per_layer, n_inputs, n_outputs
+    #)
+    x_input = nnopinf.variables.Variable(size=rom_dim,name='x',normalization_strategy='MaxAbs')
+    target = nnopinf.variables.Variable(size=rom_dim,name='y',normalization_strategy='MaxAbs')
+    x_input.set_data(reshape_snapshots(uhat).transpose())
+    target.set_data(reshape_snapshots(uhat_ddots).transpose())
+    name = "stiffness-" + str(ensemble_id)
+    if model_structure == "SpdOperator":
+        NpdMlp = nnopinf.operators.SpdOperator(
+            acts_on=x_input,
+            depends_on=(x_input,),
+            n_hidden_layers=n_hidden_layers,
+            n_neurons_per_layer=n_neurons_per_layer,
+            positive=False,
+            name=name,
+        )
+    elif model_structure == 'PsdLagrangianOperator':
+        NpdMlp = nnopinf.operators.PsdLagrangianOperator(
+            acts_on=x_input,
+            depends_on=(x_input,),
+            n_hidden_layers=n_hidden_layers,
+            n_neurons_per_layer=n_neurons_per_layer,
+            positive=False,
+            name=name,
+        )
+    elif model_structure == 'NNOperator':
+        NpdMlp = nnopinf.operators.StandardOperator(
+            n_outputs=rom_dim,
+            depends_on=(x_input,),
+            n_hidden_layers=n_hidden_layers,
+            n_neurons_per_layer=n_neurons_per_layer,
+            name=name,
+        )
 
-    #SkewMlp = operators.SkewOperator(n_hidden_layers,n_neurons_per_layer,n_inputs,n_outputs)
-    #MatrixMlp = operators.MatrixOperator(n_hidden_layers,n_neurons_per_layer,n_inputs,(n_outputs,n_outputs))
-    #CompositeOperator = operators.CompositeOperator([NpdMlp])
-
-    # Create models for sidesets and wrap for OpInf
-    my_operators = []
+    # Create models for sidesets and wrap for OpInf.
+    my_operators = [NpdMlp]
     sidesets = list(uhat_sidesets.keys())
     inputs = {}
+    my_vars = [x_input]
     for sideset in sidesets:
-      inputs["u-" + sideset] = reshape_snapshots(uhat_sidesets[sideset]).transpose()
-      #print(uhat_sidesets[sideset].shape)
-      n_sideset_inputs = uhat_sidesets[sideset].shape[0]
-      op = nnopinf.operators.MatrixOperator(n_hidden_layers,n_neurons_per_layer,n_sideset_inputs,(n_outputs,n_sideset_inputs))
-      my_operators.append( nnopinf.models.WrappedOperatorForModel(operator=op,inputs=("u-" + sideset,),name="BC-" + sideset + '-' + str(ensemble_id))  )
+       #inputs["u-" + sideset] = reshape_snapshots(uhat_sidesets[sideset]).transpose()
+        # print(uhat_sidesets[sideset].shape)
+       n_sideset_inputs = uhat_sidesets[sideset].shape[0]
+        ##op = nnopinf.operators.MatrixOperator(
+       #     n_hidden_layers,
+       #     n_neurons_per_layer,
+       #     n_sideset_inputs,
+       #     (n_outputs, n_sideset_inputs),
+       # )
+       sideset_var = nnopinf.variables.Variable(size=n_sideset_inputs,name='u-' + sideset,normalization_strategy='MaxAbs')
+       name = "BC-" + str(sideset) + '-' + str(ensemble_id)
+       op = nnopinf.operators.MatrixOperator(acts_on=sideset_var,depends_on=(sideset_var,),n_outputs=rom_dim,n_hidden_layers=0,n_neurons_per_layer=n_neurons_per_layer,name=name)
+       sideset_var.set_data(  reshape_snapshots(uhat_sidesets[sideset]).transpose() )
+       my_vars.append(sideset_var)
+       my_operators.append(op)
 
-    stiffness_operator =  nnopinf.models.WrappedOperatorForModel(operator=NpdMlp,inputs=("x",),name="stiffness-" + str(ensemble_id))
-    my_operators.append(stiffness_operator)
+    my_model = nnopinf.models.Model(my_operators)
 
-    my_model = nnopinf.models.OpInfModel( my_operators )
-    if initialization_model is not None:
-        my_model.hierarchical_update(initialization_model)
-
-    #Construct training data
+    # Construct training data and train.
     if os.path.isdir(output_dir):
         pass
     else:
         os.makedirs(output_dir)
 
-    training_settings = opinf_settings['neural-network-training-settings']
+    training_settings = prepare_nnopinf_training_settings(
+        opinf_settings["neural-network-training-settings"]
+    )
 
-    print('hi',uhat.shape)
-    uhat = reshape_snapshots(uhat)
-    inputs['x'] = uhat.transpose()
-    nnopinf.training.train(my_model,input_dict=inputs,y=reshape_snapshots(uhat_ddots).transpose(),training_settings=training_settings)
-
-
-
-
-
-
-
-
-
-
+    nnopinf.training.train(
+        my_model,
+        variables = my_vars,
+        y=target,
+        training_settings=training_settings,
+    )
 
 
 
 
 def formatRed(skk):
-  return "\033[91m {}\033[00m" .format(skk)
+    return "\033[91m {}\033[00m".format(skk)
+
 
 def get_acceptable_opinf_settings():
   acceptable_settings = {}
@@ -111,6 +155,170 @@ def get_acceptable_opinf_settings():
   # How we scale boundary input snapshots (sideset displacement/force)
   acceptable_settings['input-scale'] = ['none','rms']
   return acceptable_settings
+
+
+def get_acceptable_architecture_settings():
+  acceptable_settings = {}
+  acceptable_settings["model-structure"] = [
+        "PsdLagrangianOperator",
+        "SpdOperator",
+        "NNOperator"]
+  return acceptable_settings
+
+
+def get_acceptable_optimizer_methods():
+  return ["ADAM", "LBFGS", "SR1", "TR-NEWTON", "MIXED"]
+
+
+def get_default_neural_network_training_settings():
+  settings = deepcopy(nnopinf.training.get_default_settings())
+  optimizer_settings = {
+      "method": settings.pop("optimizer"),
+      "num-epochs": settings.pop("num-epochs"),
+      "batch-size": settings.pop("batch-size"),
+      "learning-rate": settings.pop("learning-rate"),
+      "weight-decay": settings.pop("weight-decay"),
+      "lr-decay": settings.pop("lr-decay"),
+      "LBFGS-acceleration": {
+          "enabled": settings.pop("LBFGS-acceleration"),
+          "acceleration-epoch-frequency": settings.pop(
+              "LBFGS-acceleration-epoch-frequency"
+          ),
+          "acceleration-iterations": settings.pop(
+              "LBFGS-acceleration-iterations"
+          ),
+      },
+  }
+  settings["optimizer"] = optimizer_settings
+  return settings
+
+
+def prepare_nnopinf_training_settings(training_settings):
+  prepared_settings = deepcopy(training_settings)
+  optimizer_settings = prepared_settings.pop("optimizer")
+  lbfgs_settings = optimizer_settings.get("LBFGS-acceleration", {})
+  prepared_settings["optimizer"] = optimizer_settings["method"]
+  prepared_settings["num-epochs"] = optimizer_settings["num-epochs"]
+  prepared_settings["batch-size"] = optimizer_settings["batch-size"]
+  prepared_settings["learning-rate"] = optimizer_settings["learning-rate"]
+  prepared_settings["weight-decay"] = optimizer_settings["weight-decay"]
+  prepared_settings["lr-decay"] = optimizer_settings["lr-decay"]
+  prepared_settings["LBFGS-acceleration"] = lbfgs_settings.get("enabled", False)
+  prepared_settings["LBFGS-acceleration-epoch-frequency"] = lbfgs_settings.get(
+      "acceleration-epoch-frequency", 1000
+  )
+  prepared_settings["LBFGS-acceleration-iterations"] = lbfgs_settings.get(
+      "acceleration-iterations", 50
+  )
+  return prepared_settings
+
+
+def check_valid_neural_network_training_settings(opinf_settings):
+  assert "neural-network-training-settings" in opinf_settings, formatRed(
+      "Error processing OpInf settings: required key neural-network-training-settings was not found"
+  )
+  training_settings = opinf_settings["neural-network-training-settings"]
+  assert isinstance(training_settings, dict), formatRed(
+      "Error processing OpInf settings: neural-network-training-settings must be a dict"
+  )
+  old_training_keys = [
+      "num-epochs",
+      "batch-size",
+      "learning-rate",
+      "weight-decay",
+      "lr-decay",
+      "LBFGS-acceleration",
+      "LBFGS-acceleration-epoch-frequency",
+      "LBFGS-acceleration-iterations",
+  ]
+  for key in old_training_keys:
+      assert key not in training_settings, formatRed(
+          "Error processing OpInf settings: "
+          + str(key)
+          + " must be under neural-network-training-settings/optimizer"
+      )
+  for key in ["model-name", "output-path", "resume", "optimizer"]:
+      assert key in training_settings, formatRed(
+          "Error processing OpInf settings: required neural-network-training-settings key "
+          + str(key)
+          + " was not found"
+      )
+
+  optimizer_settings = training_settings["optimizer"]
+  assert isinstance(optimizer_settings, dict), formatRed(
+      "Error processing OpInf settings: optimizer must be a dict"
+  )
+  for key in ["LBFGS-acceleration-epoch-frequency", "LBFGS-acceleration-iterations"]:
+      assert key not in optimizer_settings, formatRed(
+          "Error processing OpInf settings: "
+          + str(key)
+          + " must be under optimizer/LBFGS-acceleration"
+      )
+  for key in [
+      "method",
+      "num-epochs",
+      "batch-size",
+      "learning-rate",
+      "weight-decay",
+      "lr-decay",
+  ]:
+      assert key in optimizer_settings, formatRed(
+          "Error processing OpInf settings: required optimizer key "
+          + str(key)
+          + " was not found"
+      )
+
+  assert optimizer_settings["method"] in get_acceptable_optimizer_methods(), formatRed(
+      "Error processing OpInf settings: optimizer method "
+      + str(optimizer_settings["method"])
+      + " is not valid \nAcceptable options are: "
+      + str(get_acceptable_optimizer_methods())
+  )
+  assert isinstance(optimizer_settings["num-epochs"], int), formatRed(
+      "Error processing OpInf settings: num-epochs must be an int"
+  )
+  assert optimizer_settings["num-epochs"] > 0, formatRed(
+      "Error processing OpInf settings: num-epochs must be > 0"
+  )
+  assert isinstance(optimizer_settings["batch-size"], int), formatRed(
+      "Error processing OpInf settings: batch-size must be an int"
+  )
+  assert optimizer_settings["batch-size"] > 0, formatRed(
+      "Error processing OpInf settings: batch-size must be > 0"
+  )
+  for key in ["learning-rate", "weight-decay", "lr-decay"]:
+      assert isinstance(optimizer_settings[key], (int, float)), formatRed(
+          "Error processing OpInf settings: " + str(key) + " must be numeric"
+      )
+
+  if optimizer_settings["method"] == "ADAM":
+      assert "LBFGS-acceleration" in optimizer_settings, formatRed(
+          "Error processing OpInf settings: required optimizer key LBFGS-acceleration was not found"
+      )
+      lbfgs_settings = optimizer_settings["LBFGS-acceleration"]
+      assert isinstance(lbfgs_settings, dict), formatRed(
+          "Error processing OpInf settings: LBFGS-acceleration must be a dict"
+      )
+      for key in [
+          "enabled",
+          "acceleration-epoch-frequency",
+          "acceleration-iterations",
+      ]:
+          assert key in lbfgs_settings, formatRed(
+              "Error processing OpInf settings: required LBFGS-acceleration key "
+              + str(key)
+              + " was not found"
+          )
+      assert isinstance(lbfgs_settings["enabled"], bool), formatRed(
+          "Error processing OpInf settings: LBFGS-acceleration enabled must be a bool"
+      )
+      for key in ["acceleration-epoch-frequency", "acceleration-iterations"]:
+          assert isinstance(lbfgs_settings[key], int), formatRed(
+              "Error processing OpInf settings: " + str(key) + " must be an int"
+          )
+          assert lbfgs_settings[key] > 0, formatRed(
+              "Error processing OpInf settings: " + str(key) + " must be > 0"
+          )
 
 
 
@@ -152,6 +360,51 @@ def check_valid_settings(opinf_settings):
       assert opinf_settings[key] in acceptable_settings[key], formatRed("Error processing OpInf settings: key " + str(opinf_settings[key]) + " is not valid \n" +  "Acceptable options are: " + str(acceptable_settings[key]))
 
 
+  if opinf_settings.get("model-type") == "neural-network":
+        assert "architecture" in opinf_settings, formatRed(
+            "Error processing OpInf settings: required key architecture was not found"
+        )
+        architecture_settings = opinf_settings["architecture"]
+        assert isinstance(architecture_settings, dict), formatRed(
+            "Error processing OpInf settings: architecture must be a dict"
+        )
+        required_architecture_keys = [
+            "model-structure",
+            "n-hidden-layers",
+            "n-neurons-per-layer",
+        ]
+        for key in required_architecture_keys:
+            assert key in architecture_settings, formatRed(
+                "Error processing OpInf settings: required architecture key "
+                + str(key)
+                + " was not found"
+            )
+        acceptable_architecture_settings = get_acceptable_architecture_settings()
+        for key in list(acceptable_architecture_settings.keys()):
+            assert architecture_settings[key] in acceptable_architecture_settings[key], formatRed(
+                "Error processing OpInf settings: architecture key "
+                + str(architecture_settings[key])
+                + " is not valid \n"
+                + "Acceptable options are: "
+                + str(acceptable_architecture_settings[key])
+            )
+        assert isinstance(architecture_settings["n-hidden-layers"], int), formatRed(
+            "Error processing OpInf settings: n-hidden-layers must be an int"
+        )
+        assert architecture_settings["n-hidden-layers"] > 0, formatRed(
+            "Error processing OpInf settings: n-hidden-layers must be > 0"
+        )
+        n_neurons = architecture_settings["n-neurons-per-layer"]
+        assert n_neurons == "auto" or isinstance(n_neurons, int), formatRed(
+            "Error processing OpInf settings: n-neurons-per-layer must be an int or 'auto'"
+        )
+        if isinstance(n_neurons, int):
+            assert n_neurons > 0, formatRed(
+                "Error processing OpInf settings: n-neurons-per-layer must be > 0"
+            )
+        check_valid_neural_network_training_settings(opinf_settings)
+
+
 def get_example_opinf_settings():
   settings = {}
   # Name of FOM yaml file from which to create OpInf ROM
@@ -164,6 +417,11 @@ def get_example_opinf_settings():
 
   # Type of ROM to create
   settings['model-type'] = 'linear'
+  settings['architecture'] = {
+      'model-structure': 'PsdLagrangianOperator',
+      'n-hidden-layers': 2,
+      'n-neurons-per-layer': 'auto',
+  }
   # How to scale sideset displacement/force inputs
   settings['input-scale'] = 'none'
 
@@ -194,7 +452,7 @@ def get_example_opinf_settings():
 
 
 def get_default_neural_network_settings():
-  settings = {}
+  return get_default_neural_network_training_settings()
 
 
 ###In development
@@ -546,6 +804,11 @@ def get_processed_snapshots(opinf_settings):
   snapshots_dict['sideset_forces'] = sideset_force_snapshots
   snapshots_dict['free_dofs'] = free_dofs
   snapshots_dict['times'] = times
+  if "mass-file" in opinf_settings:
+    snapshots_dict["mass_matrix"] = normaopinf.readers.read_mass_matrix_csv(
+      opinf_settings["mass-file"]
+    )
+
 
   return snapshots_dict
 
@@ -727,13 +990,46 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict, opinf_settings):
 
     snapshot_shape = np.shape(displacement_snapshots)
     reshaped_snapshots = np.reshape(displacement_snapshots,(snapshot_shape[0],snapshot_shape[1],snapshot_shape[2]*snapshot_shape[3]) )
+    mass_matrix = snapshots_dict.get("mass_matrix")
+    mass_matrix_dense = None
+    if mass_matrix is not None:
+        if hasattr(mass_matrix, "toarray"):
+            mass_matrix_dense = mass_matrix.toarray()
+        elif isinstance(mass_matrix, normaopinf.readers.COOData):
+            mass_matrix_dense = np.zeros(mass_matrix.shape)
+            for r, c, v in zip(mass_matrix.rows, mass_matrix.cols, mass_matrix.vals):
+                mass_matrix_dense[r, c] = v
+        else:
+            mass_matrix_dense = mass_matrix
+        n_vars = displacement_snapshots.shape[0]
+        n_nodes = displacement_snapshots.shape[1]
+        expected_size = n_vars * n_nodes
+        if mass_matrix_dense.shape[0] == expected_size and mass_matrix_dense.shape[1] == expected_size:
+            # Convert interleaved (node-major) mass matrix to component-major ordering.
+            perm = np.empty(expected_size, dtype=int)
+            for node in range(n_nodes):
+                for var in range(n_vars):
+                    comp_idx = var * n_nodes + node
+                    inter_idx = node * n_vars + var
+                    perm[comp_idx] = inter_idx
+            mass_matrix_dense = mass_matrix_dense[np.ix_(perm, perm)]
+            assert np.allclose(np.diag(mass_matrix_dense)[0:n_nodes],np.diag(mass_matrix_dense)[n_nodes:2*n_nodes])
+
+
 
     tspace_energy = np.zeros(0)
     if opinf_settings['trial-space-splitting-type'] == "combined":
+        if mass_matrix_dense is not None:
+            orthogonalizer = romtools.vector_space.utils.EuclideanMatrixWeightedL2Orthogonalizer(
+                mass_matrix_dense
+            )
+        else:
+            orthogonalizer = romtools.vector_space.utils.EuclideanL2Orthogonalizer()
+
         trial_space = romtools.VectorSpaceFromPOD(snapshots=reshaped_snapshots,
                                               truncater=my_truncater,
                                               shifter = None,
-                                              orthogonalizer=romtools.vector_space.utils.EuclideanL2Orthogonalizer(),
+                                              orthogonalizer=orthogonalizer,
                                               scaler = romtools.vector_space.utils.NoOpScaler())
         # Get associted energy criteria for reporting
         energy = my_truncater.get_energy()
@@ -741,11 +1037,22 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict, opinf_settings):
 
     elif opinf_settings['trial-space-splitting-type'] == 'split':
         trial_spaces = []
+        if mass_matrix_dense is not None:
+            n_by_3 = int(mass_matrix_dense.shape[0] / 3)
+            mass_matrix_single = mass_matrix_dense[0:n_by_3, 0:n_by_3]
+        for i in range(0,3):
+            if mass_matrix_dense is not None:
+                orthogonalizer = romtools.vector_space.utils.EuclideanMatrixWeightedL2Orthogonalizer(
+                    mass_matrix_single
+                )
+            else:
+                orthogonalizer = romtools.vector_space.utils.EuclideanL2Orthogonalizer()
+
         for i in range(0,3):
             trial_space = romtools.VectorSpaceFromPOD(snapshots=reshaped_snapshots[i:i+1],
                                             truncater=my_truncater,
                                             shifter = None,
-                                            orthogonalizer=romtools.vector_space.utils.EuclideanL2Orthogonalizer(),
+                                            orthogonalizer=orthogonalizer,
                                             scaler = romtools.vector_space.utils.NoOpScaler())
             trial_spaces.append(trial_space)
             # Get associted energy criteria if we truncated based on size
@@ -760,31 +1067,62 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict, opinf_settings):
     else:
         print('trial-space-splitting-type not found')
 
+
+    if mass_matrix_dense is not None:
+        basis = trial_space.get_basis()
+        basis_matrix = basis.reshape(basis.shape[0] * basis.shape[1], basis.shape[2])
+        gram = basis_matrix.T @ (mass_matrix_dense @ basis_matrix)
+        assert np.allclose(
+            gram, np.eye(gram.shape[0]), rtol=1e-6, atol=1e-6
+        ), "Trial-space basis is not mass-orthonormal"
+
     # Project snapshots to ROM space
     snapshot_shape = np.shape(displacement_snapshots)
     reshaped_snapshots = np.reshape(displacement_snapshots,(snapshot_shape[0],snapshot_shape[1],snapshot_shape[2]*snapshot_shape[3]) )
+
+
+
     uhat = romtools.rom.optimal_l2_projection(reshaped_snapshots,trial_space)
+    if mass_matrix_dense is not None:
+        uhat = romtools.rom.optimal_l2_projection(
+            reshaped_snapshots, trial_space, weighting_matrix=mass_matrix_dense
+        )
+    else:
+        uhat = romtools.rom.optimal_l2_projection(reshaped_snapshots, trial_space)
     uhat = np.reshape(uhat,(uhat.shape[0],snapshot_shape[2],snapshot_shape[3]))
 
     snapshot_shape = np.shape(velocity_snapshots)
     reshaped_snapshots = np.reshape(velocity_snapshots,(snapshot_shape[0],snapshot_shape[1],snapshot_shape[2]*snapshot_shape[3]) )
-    uhat_dots = romtools.rom.optimal_l2_projection(reshaped_snapshots,trial_space)
+    if mass_matrix_dense is not None:
+        uhat_dots = romtools.rom.optimal_l2_projection(
+            reshaped_snapshots, trial_space, weighting_matrix=mass_matrix_dense
+        )
+    else:
+        uhat_dots = romtools.rom.optimal_l2_projection(reshaped_snapshots, trial_space)
     uhat_dots = np.reshape(uhat_dots,(uhat_dots.shape[0],snapshot_shape[2],snapshot_shape[3]))
-
 
     if opinf_settings['acceleration-computation-type'] == 'acceleration-snapshots':
       snapshot_shape = np.shape(acceleration_snapshots)
       reshaped_snapshots = np.reshape(acceleration_snapshots,(snapshot_shape[0],snapshot_shape[1],snapshot_shape[2]*snapshot_shape[3]) )
-      uhat_ddots = romtools.rom.optimal_l2_projection(reshaped_snapshots,trial_space)
+      if mass_matrix_dense is not None:
+        uhat_ddots = romtools.rom.optimal_l2_projection(
+            reshaped_snapshots, trial_space, weighting_matrix=mass_matrix_dense
+        )
+      else:
+        uhat_ddots = romtools.rom.optimal_l2_projection(reshaped_snapshots, trial_space)
       uhat_ddots = np.reshape(uhat_ddots,(uhat_ddots.shape[0],snapshot_shape[2],snapshot_shape[3]))
 
     elif opinf_settings['acceleration-computation-type'] == 'finite-difference':
       u_ddots = normaopinf.calculus.d2dx2(displacement_snapshots,times,method='2nd-order-uniform-dx')
       snapshot_shape = np.shape(u_ddots)
       reshaped_snapshots = np.reshape(u_ddots,(snapshot_shape[0],snapshot_shape[1],snapshot_shape[2]*snapshot_shape[3]) )
-      uhat_ddots = romtools.rom.optimal_l2_projection(reshaped_snapshots,trial_space)
+      if mass_matrix_dense is not None:
+        uhat_ddots = romtools.rom.optimal_l2_projection(
+            reshaped_snapshots, trial_space, weighting_matrix=mass_matrix_dense
+        )
+      else:
+        uhat_ddots = romtools.rom.optimal_l2_projection(reshaped_snapshots, trial_space)
       uhat_ddots = np.reshape(uhat_ddots,(uhat_ddots.shape[0],snapshot_shape[2],snapshot_shape[3]))
-
 
     ####### POLYNOMIAL OPINF MODELS
     opinf_polynomial_models = ['linear','linear-symmetric','quadratic','cubic']
