@@ -14,7 +14,7 @@ if __name__ == "__main__":
     settings["training-data-directories"] = [
         "/home/andiaz/tpls/norma-opinf/examples/non-overlapping/torsion/a5500_5500/fom-fom/with-output/dynamic-neohookean-fom-fom-hex-hex-equal-201-snap/impl-expl-dt-2em6-1em6-DN-predictor/relax1"
     ]
-    settings["model-type"] = "cubic"
+    settings["model-type"] = "quadratic"
     settings["stop-training-time"] = "end"
     settings["training-skip-steps"] = 1
     settings["forcing"] = False
@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
     settings["regularization-parameter"] = {
         "A": np.logspace(-4, 1, 6),
-        "HG": np.logspace(-4, 1, 6),
+        "H": np.logspace(-4, 1, 6),
         "B": np.logspace(-4, 1, 6),
     }
 
@@ -61,5 +61,5 @@ if __name__ == "__main__":
     settings["acceleration-computation-type"] = "acceleration-snapshots"
 
     snapshots_dict = normaopinf.opinf.get_processed_snapshots(settings)
-    settings["model-name"] = "cubic-opinf-2-multi-reg"
+    settings["model-name"] = "quadratic-opinf-2-multi-reg"
     normaopinf.opinf.make_opinf_model_from_snapshots_dict(snapshots_dict, settings)

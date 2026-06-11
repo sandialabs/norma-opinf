@@ -183,22 +183,14 @@ def _reg_groups_are_consistent_with_model(
     all_operators = "".join(groups)
     if model_type in ["linear", "linear-symmetric"]:
         allowed_operators = "AB"
-
     elif model_type == "quadratic":
         allowed_operators = "AHB"
-
     elif model_type == "cubic":
         allowed_operators = "AHGB"
+    else:
+        raise ValueError(f"{model_type} is not a supported model type.")
+
     if forcing:
         allowed_operators = "c" + allowed_operators
 
     return set(all_operators) == set(allowed_operators)
-
-
-# if __name__ == "__main__":
-#     reg_candidates = {"cA": [1], "B": [2, 3], "H": [4, 5], "G": [6]}
-#     groups, reg_combos = get_reg_combos(reg_candidates)
-#     print(reg_combos)
-#     for combo in reg_combos:
-#         reg = reg_factory(2, 1, groups, combo)
-#         print(reg)
