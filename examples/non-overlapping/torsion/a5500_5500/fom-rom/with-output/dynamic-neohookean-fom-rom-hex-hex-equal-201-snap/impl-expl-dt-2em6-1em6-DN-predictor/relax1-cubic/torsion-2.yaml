@@ -4,8 +4,8 @@ output mesh file: torsion-2.e
 CSV output interval: 2.0e-6
 CSV write sidesets: false
 model:
-  type: quadratic opinf rom 
-  model-file: /home/andiaz/tpls/norma-opinf/examples/non-overlapping/torsion/a5500_5500/fom-rom/with-output/dynamic-neohookean-fom-rom-hex-hex-equal-201-snap/impl-expl-dt-2em6-1em6-DN-predictor/relax1/quadratic-opinf-2-multi-reg.npz
+  type: cubic opinf rom 
+  model-file: /home/andiaz/tpls/norma-opinf/examples/non-overlapping/torsion/a5500_5500/fom-rom/with-output/dynamic-neohookean-fom-rom-hex-hex-equal-201-snap/impl-expl-dt-2em6-1em6-DN-predictor/relax1-cubic/cubic-opinf-2-multi-reg.npz
   stress recovery: consistent
   material:
     blocks:

@@ -24,7 +24,8 @@ def multi_regselect(
     xdim = x.shape[0]
     bcdim = bcs.shape[0]
     groups, reg_combos = get_reg_combos(reg_candidates)
-    assert _reg_groups_are_permissible(groups, model_type, forcing=forcing)
+    assert _reg_groups_are_consistent_with_model(groups, model_type, forcing=forcing)
+
     # Store errors for different regularization parameters
     errors = np.zeros(len(reg_combos))
 
@@ -134,7 +135,7 @@ def multi_regselect(
 def get_reg_combos(reg_candidates: dict[str, Union[list, np.ndarray]]):
     groups = list(reg_candidates.keys())
     candidates = [regs for _, regs in reg_candidates.items()]
-    assert _groups_are_disjoint(groups)
+    assert _reg_groups_are_disjoint(groups)
     return groups, list(product(*candidates))
 
 
@@ -169,12 +170,12 @@ def _get_onesvec(xdim: int, bcdim: int, operator: str) -> np.ndarray:
         raise ValueError(f"{operator} is not a supported operator type.")
 
 
-def _groups_are_disjoint(groups: list[str]) -> bool:
+def _reg_groups_are_disjoint(groups: list[str]) -> bool:
     joined_groups = "".join(groups)
     return len(joined_groups) == len(set(joined_groups))
 
 
-def _reg_groups_are_permissible(
+def _reg_groups_are_consistent_with_model(
     groups: list[str],
     model_type: str,
     forcing: bool = False,
