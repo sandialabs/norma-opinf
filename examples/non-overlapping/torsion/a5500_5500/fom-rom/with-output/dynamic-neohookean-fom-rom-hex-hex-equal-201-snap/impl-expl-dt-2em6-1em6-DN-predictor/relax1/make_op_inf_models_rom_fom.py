@@ -9,10 +9,10 @@ if __name__ == "__main__":
 
     settings = {}
     settings["fom-yaml-file"] = (
-        "/home/andiaz/tpls/norma-opinf/examples/non-overlapping/torsion/a5500_5500/fom-fom/with-output/dynamic-neohookean-fom-fom-hex-hex-equal-201-snap/impl-expl-dt-2em6-1em6-DN-predictor/relax1/torsion-2.yaml"
+        "../../../../../fom-fom/with-output/dynamic-neohookean-fom-fom-hex-hex-equal-201-snap/impl-expl-dt-2em6-1em6-DN-predictor/relax1/torsion-2.yaml"
     )
     settings["training-data-directories"] = [
-        "/home/andiaz/tpls/norma-opinf/examples/non-overlapping/torsion/a5500_5500/fom-fom/with-output/dynamic-neohookean-fom-fom-hex-hex-equal-201-snap/impl-expl-dt-2em6-1em6-DN-predictor/relax1"
+        "../../../../../fom-fom/with-output/dynamic-neohookean-fom-fom-hex-hex-equal-201-snap/impl-expl-dt-2em6-1em6-DN-predictor/relax1/"
     ]
     settings["model-type"] = "quadratic"
     settings["stop-training-time"] = "end"
