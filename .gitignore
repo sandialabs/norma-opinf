@@ -1,2 +1,10 @@
 __pycache__/
-tests*
+*.csv
+*.png
+*.pdf
+*.e
+*.log
+*.txt
+*.out
+*.npz
+

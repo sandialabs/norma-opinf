@@ -2,6 +2,7 @@ import argparse
 import sys
 import os
 from copy import deepcopy
+from normaopinf.opinf.multi_reg import multi_regselect
 
 import numpy as np
 import opinf
@@ -1160,6 +1161,18 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict, opinf_settings):
             opinf_model,regularization_parameter = non_parametric_fit_with_grid_search(opinf_model=opinf_model,x=uhat,xdot=uhat_dots,xddot=uhat_ddots,bcs = reduced_stacked_sideset_snapshots,times=times, regularization_parameters_to_try=opinf_settings['regularization-parameter'])
         elif opinf_settings['regularization-parameter'] == "automatic":
             opinf_model,regularization_parameter = non_parametric_fit_with_grid_search(opinf_model=opinf_model,x=uhat,xdot=uhat_dots,xddot=uhat_ddots,bcs = reduced_stacked_sideset_snapshots,times=times)
+        elif isinstance(opinf_settings["regularization-parameter"], dict):
+            opinf_model, regularization_parameter = multi_regselect(
+                opinf_model=opinf_model,
+                x=uhat,
+                xdot=uhat_dots,
+                xddot=uhat_ddots,
+                bcs=reduced_stacked_sideset_snapshots,
+                times=times,
+                reg_candidates=opinf_settings["regularization-parameter"],
+                forcing=opinf_settings["forcing"],
+                model_type=opinf_settings["model-type"],
+            )
         else:
            #l2solver = opinf.lstsq.L2Solver(regularizer=opinf_settings['regularization-parameter'])
            #opinf_model.fit(states=uhat, ddts=uhat_ddots,inputs=reduced_stacked_sideset_snapshots)
@@ -1213,7 +1226,11 @@ def make_opinf_model_from_snapshots_dict(snapshots_dict, opinf_settings):
           if opinf_settings.get('save-sideset-bases', False):
             vals_to_save["basis-B_N_" + sideset] = ss_force_tspace[sideset].get_basis()
 
-        vals_to_save["regularization-parameter"] = regularization_parameter
+        if isinstance(regularization_parameter, dict):
+            for group, val in regularization_parameter.items():
+                vals_to_save[f"regularization-parameter-{group}"] = val
+        else:
+            vals_to_save["regularization-parameter"] = regularization_parameter
         vals_to_save["basis"] = trial_space.get_basis()
         vals_to_save["K"] = K
         vals_to_save["energy-cutoff"] = tspace_energy
