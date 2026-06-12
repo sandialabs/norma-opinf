@@ -1,7 +1,7 @@
 import os
 import sys
 from copy import deepcopy
-
+print("test")
 import normaopinf
 import normaopinf.calculus
 import normaopinf.opinf.models as opinf_models
