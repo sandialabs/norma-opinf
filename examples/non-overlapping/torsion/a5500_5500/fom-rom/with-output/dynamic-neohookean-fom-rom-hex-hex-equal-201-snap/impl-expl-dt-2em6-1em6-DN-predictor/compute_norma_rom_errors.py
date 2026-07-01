@@ -37,10 +37,15 @@ def main():
             rom_disps, _ = load_displacement_csv_files(romdir, domain)
         print(f"done. shape = {rom_disps.shape}")
 
-        error = compute_frobenius_error(
-            fom_disps[:, :, : rom_disps.shape[-1]], rom_disps, relative=True
-        )
-        print(f"      Relative L2-L2 ROM error = {error:1.4e}\n")
+        if fom_disps.shape != rom_disps.shape:
+            print("      ROM did not converge.")
+        else:
+            error = compute_frobenius_error(
+                fom_disps,
+                rom_disps,
+                relative=True,
+            )
+            print(f"      Relative L2-L2 ROM error = {error:1.4e}\n")
 
 
 def compute_frobenius_error(

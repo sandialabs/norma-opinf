@@ -20,14 +20,16 @@ def multi_regselect(
     forcing: bool,
     model_type: str,
 ):
-    print("Performing grid search")
+    _all_candidates_are_floats(reg_candidates)
+
+    print("Performing grid search", flush=True)
     xdim = x.shape[0]
     bcdim = bcs.shape[0]
     groups, reg_combos = get_reg_combos(reg_candidates)
-    assert _reg_groups_are_consistent_with_model(groups, model_type, forcing=forcing)
+    _reg_groups_are_consistent_with_model(groups, model_type, forcing=forcing)
 
     # Store errors for different regularization parameters
-    errors = np.zeros(len(reg_combos))
+    errors = []
 
     # Create an extension of the time window to run ROMs into the future
     extend_window_ratio = 1
@@ -40,7 +42,7 @@ def multi_regselect(
     assert np.allclose(times_extended[0 : times.size], times)
 
     # Loop over regularization parameters, fit, and test
-    for counter, reg_combo in enumerate(reg_combos):
+    for reg_combo in reg_combos:
         opinf_model.solver = opinf.lstsq.TikhonovSolver(
             reg_factory(xdim, bcdim, groups, reg_combo)
         )
@@ -49,7 +51,7 @@ def multi_regselect(
         opinf_model.fit(states=x, ddts=xddot, inputs=bcs)
 
         n_cases = x.shape[-2]
-        errors[counter] = 0.0
+        error = 0.0
         for i in range(0, n_cases):
 
             # Create wrapper for forward evaluation of the model
@@ -83,7 +85,7 @@ def multi_regselect(
                     opinf_model,
                 )
             else:
-                print("Model type not found, exiting")
+                print("Model type not found, exiting", flush=True)
                 sys.exit()
 
             def bc_hook(step):
@@ -102,28 +104,26 @@ def multi_regselect(
 
             # Check if we blew up
             if np.any(np.isnan(test_states)) or np.any(np.abs(test_states) > 1e5):
-                print("Detected NaN in solution")
-                errors[counter] += 1e10
+                print("Detected NaN in solution", flush=True)
+                error += 1e10
             else:
                 local_error = np.linalg.norm(
                     test_states[:, 0 : times.shape[0]] - x[:, i, :]
                 ) / np.linalg.norm(x[:, i, :])
-                errors[counter] += local_error
+                error += local_error
 
-        print(
-            "Regularization Parameter:",
-        )
+        errors.append(error / n_cases)
+        print("Regularization Parameter:", flush=True)
         for g, val in zip(groups, reg_combo):
-            print(f"  {g}: {val:1.4e}")
-        print(f"  Error: {errors[counter]/n_cases:1.3e}\n")
-        counter += 1
+            print(f"  {g}: {val:1.4e}", flush=True)
+        print(f"  Error: {errors[-1]:1.3e}\n", flush=True)
     optimal_case = np.nanargmin(errors)
     optimal_reg_combo = reg_combos[optimal_case]
-    best_error = np.nanmin(errors)
-    print("Best regularization parameters:")
+    best_error = errors[optimal_case]
+    print("Best regularization parameters:", flush=True)
     for g, val in zip(groups, optimal_reg_combo):
-        print(f"  {g}: {val:1.4e}")
-    print(f"  Error = {best_error:1.3e}")
+        print(f"  {g}: {val:1.4e}", flush=True)
+    print(f"  Error = {best_error:1.3e}", flush=True)
     opinf_model.solver = opinf.lstsq.TikhonovSolver(
         reg_factory(xdim, bcdim, groups, optimal_reg_combo)
     )
@@ -135,7 +135,7 @@ def multi_regselect(
 def get_reg_combos(reg_candidates: dict[str, Union[list, np.ndarray]]):
     groups = list(reg_candidates.keys())
     candidates = [regs for _, regs in reg_candidates.items()]
-    assert _reg_groups_are_disjoint(groups)
+    _reg_groups_are_disjoint(groups)
     return groups, list(product(*candidates))
 
 
@@ -151,7 +151,9 @@ def reg_factory(
     reg_vec = []
     for operator in "cAHGB":
         if operator in reg_dict.keys():
-            reg_vec.append(reg_dict[operator] * _get_onesvec(xdim, bcdim, operator))
+            reg_vec.append(
+                reg_dict[operator] * _get_onesvec(xdim, bcdim, operator),
+            )
     return np.concatenate(reg_vec)
 
 
@@ -170,16 +172,18 @@ def _get_onesvec(xdim: int, bcdim: int, operator: str) -> np.ndarray:
         raise ValueError(f"{operator} is not a supported operator type.")
 
 
-def _reg_groups_are_disjoint(groups: list[str]) -> bool:
+def _reg_groups_are_disjoint(groups: list[str]):
     joined_groups = "".join(groups)
-    return len(joined_groups) == len(set(joined_groups))
+    are_disjoint = len(joined_groups) == len(set(joined_groups))
+    if not are_disjoint:
+        raise ValueError("Regularization groups must be disjoint.")
 
 
 def _reg_groups_are_consistent_with_model(
     groups: list[str],
     model_type: str,
     forcing: bool = False,
-) -> bool:
+):
     all_operators = "".join(groups)
     if model_type in ["linear", "linear-symmetric"]:
         allowed_operators = "AB"
@@ -193,4 +197,14 @@ def _reg_groups_are_consistent_with_model(
     if forcing:
         allowed_operators = "c" + allowed_operators
 
-    return set(all_operators) == set(allowed_operators)
+    are_consistent = set(all_operators) == set(allowed_operators)
+    if not are_consistent:
+        raise ValueError(
+            "Regularization groups are not consistent with model type.",
+        )
+
+
+def _all_candidates_are_floats(reg_candidates: dict[str, list[float]]):
+    for _, vals in reg_candidates.items():
+        if not np.all([isinstance(val, float) for val in vals]):
+            raise ValueError("All regularization candidates must be of type float.")
