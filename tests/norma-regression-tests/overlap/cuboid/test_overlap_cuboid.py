@@ -24,8 +24,8 @@ def test_cuboid(request):
   os.chdir('../dynamic-opinf-rom')
   subprocess.run(['cp','../dynamic-opinf-fom/opinf-operator.npz','.'])
   subprocess.run(norma_list)
-  gold = np.genfromtxt('cuboid-2-reduced_states-0020.gold')
-  data = np.genfromtxt('cuboid-2-reduced_states-0020.csv')
+  gold = np.genfromtxt('cuboid-2-reduced-states-0020.gold')
+  data = np.genfromtxt('cuboid-2-reduced-states-0020.csv')
   assert np.allclose(np.abs(gold),np.abs(data))
 
 if __name__=='__main__':
