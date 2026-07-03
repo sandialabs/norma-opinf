@@ -218,7 +218,7 @@ def get_free_dofs(solution_directory: str, base_name : str) -> np.ndarray:
     '''
     #old_string_to_match = str(solution_id).zfill(2) + "-free_dofs-"
     #string_to_match = "-" + str(solution_id) + "-free_dofs-"
-    string_to_match = base_name + "-free_dofs-"
+    string_to_match = base_name + "-free-dofs-"
     list_of_files = [solution_directory +'/' + f for f in os.listdir(solution_directory) if (string_to_match in f)]
     list_of_files.sort(key=get_timestamp)
     free_dofs = np.genfromtxt(list_of_files[0],dtype=bool)
