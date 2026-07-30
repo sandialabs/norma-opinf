@@ -4,7 +4,8 @@ import subprocess
 import numpy as np
 import yaml
 
-MASTER_YAMLS = ["../torsion-1-master.yaml", "../torsion-2-master.yaml"]
+MASTER_YAMLS = ["../torsion-1-ND-master.yaml", "../torsion-2-ND-master.yaml"]
+# MASTER_YAMLS = ["../torsion-1-master.yaml", "../torsion-2-master.yaml"]
 PATH_TO_NORMA = "/home/andiaz/tpls/Norma.jl"
 JULIA = "~/.juliaup/bin/julia"
 POLYNOMIAL_TYPES = ["linear", "quadratic", "cubic"]
@@ -36,15 +37,15 @@ def main():
     print(f"  ROM type = {romtype}", flush=True)
 
     # neglog_energy_cutoffs = [4]
-    neglog_energy_cutoffs = [4, 6, 8]
+    neglog_energy_cutoffs = [4, 6]
     submitter = NormaJobSubmitter(
         problem,
         model_dir,
         romtype,
-        working_dir="./",
+        working_dir="./neumann-dirichlet/",
     )
     submitter.create_all_jobs(neglog_energy_cutoffs)
-    submitter.submit_all_jobs(concurrent_jobs=10)
+    submitter.submit_all_jobs(concurrent_jobs=1)
 
 
 class NormaJobSubmitter:
@@ -121,7 +122,8 @@ class NormaJobSubmitter:
         command = " ".join(
             [
                 "cp",
-                "../../torsion.yaml",
+                "../../../torsion.yaml",
+                # "../../torsion.yaml",
                 ".;",
                 JULIA,
                 f"--project=@{PATH_TO_NORMA}",

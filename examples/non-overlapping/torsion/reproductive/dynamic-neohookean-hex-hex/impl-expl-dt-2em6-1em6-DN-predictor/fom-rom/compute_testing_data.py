@@ -46,7 +46,7 @@ def main():
         working_dir="./",
     )
     submitter.create_all_jobs(neglog_energy_cutoffs)
-    submitter.submit_all_jobs(concurrent_jobs=3)
+    submitter.submit_all_jobs(concurrent_jobs=1)
 
 
 class NormaJobSubmitter:

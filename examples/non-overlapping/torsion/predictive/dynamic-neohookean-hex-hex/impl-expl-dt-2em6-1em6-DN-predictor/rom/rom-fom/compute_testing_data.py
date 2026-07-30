@@ -4,7 +4,10 @@ import subprocess
 import numpy as np
 import yaml
 
-MASTER_YAML = "../torsion-1-master.yaml"
+MASTER_FOM_YAML = "../../torsion-2-ND-master.yaml"
+MASTER_ROM_YAML = "../torsion-1-ND-master.yaml"
+# MASTER_FOM_YAML = "../torsion-2-master.yaml"
+# MASTER_ROM_YAML = "../torsion-1-master.yaml"
 PATH_TO_NORMA = "/home/andiaz/tpls/Norma.jl"
 JULIA = "~/.juliaup/bin/julia"
 POLYNOMIAL_TYPES = ["linear", "quadratic", "cubic"]
@@ -37,15 +40,16 @@ def main():
     print(f"  ROM type = {romtype}", flush=True)
 
     # neglog_energy_cutoffs = [4]
-    neglog_energy_cutoffs = [4, 6, 8]
+    neglog_energy_cutoffs = [4, 6]
     submitter = NormaJobSubmitter(
         model_dir,
         domain,
         romtype,
-        working_dir="./",
+        working_dir="./neumann-dirichlet",
+        # working_dir="./",
     )
     submitter.create_all_jobs(neglog_energy_cutoffs)
-    submitter.submit_all_jobs(concurrent_jobs=10)
+    submitter.submit_all_jobs(concurrent_jobs=1)
 
 
 class NormaJobSubmitter:
@@ -85,7 +89,7 @@ class NormaJobSubmitter:
             yaml.dump(yaml_dict, file, sort_keys=False)
 
     def _generate_yaml_dict(self, job_id: str) -> dict[dict]:
-        with open(MASTER_YAML, "r") as file:
+        with open(MASTER_ROM_YAML, "r") as file:
             yaml_dict = yaml.safe_load(file)
 
         if self.romtype in POLYNOMIAL_TYPES:
@@ -110,10 +114,11 @@ class NormaJobSubmitter:
         command = " ".join(
             [
                 "cp",
-                "../../torsion-2-master.yaml",
+                f"../{MASTER_FOM_YAML}",
                 "torsion-2.yaml;",
                 "cp",
-                "../../torsion.yaml",
+                # "../../torsion.yaml",
+                "../../../torsion.yaml",
                 ".;",
                 JULIA,
                 f"--project=@{PATH_TO_NORMA}",

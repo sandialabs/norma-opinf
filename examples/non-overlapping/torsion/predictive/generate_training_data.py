@@ -4,18 +4,20 @@ import subprocess
 import yaml
 
 YAML_DIR = "/home/andiaz/tpls/norma-opinf/examples/non-overlapping/torsion/predictive/"
-MASTER_YAMLS = ["torsion-1-master.yaml", "torsion-2-master.yaml"]
+MASTER_YAMLS = ["torsion-1-ND-master.yaml", "torsion-2-ND-master.yaml"]
+# MASTER_YAMLS = ["torsion-1-master.yaml", "torsion-2-master.yaml"]
 PATH_TO_NORMA = "/home/andiaz/tpls/Norma.jl"
 JULIA_EXEC = "~/.juliaup/bin/julia"
 
 
 def main():
-    # velo_vals = [500, 1000, 5000, 5500, 8000]
-    velo_vals = [1000, 2000, 3000, 4000, 4500, 5000, 6000, 7000, 8000]
+    # velo_vals = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000]
+    velo_vals = [5500]
 
-    concurrent_jobs = 5
+    concurrent_jobs = 1
     problem = "torsion"
-    config = "./dynamic-neohookean-hex-hex/impl-expl-dt-2em6-1em6-DN-predictor/"
+    # config = "./dynamic-neohookean-hex-hex/impl-expl-dt-2em6-1em6-DN-predictor/"
+    config = "./dynamic-neohookean-hex-hex/impl-expl-dt-2em6-1em6-ND-predictor/"
     submitter = NormaJobSubmitter(problem=problem, working_dir=config)
     submitter.create_all_jobs(velo_vals, overwrite=False)
     submitter.submit_all_jobs(concurrent_jobs=concurrent_jobs)

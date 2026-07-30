@@ -35,7 +35,9 @@ def main():
             print(f"ROM type = {romtype}:", flush=True)
             for nlec in energy_criteria:
                 run_dir = runs_dir + f"{romtype}-etrunc-1em{nlec}"
-                avg_iter, max_iter = count_schwarz_iterations(problem, run_dir)
+                avg_iter, max_iter, time_line = count_schwarz_iterations(
+                    problem, run_dir
+                )
                 iter_counts["average"].append(avg_iter)
                 iter_counts["max"].append(max_iter)
                 print(
@@ -43,6 +45,7 @@ def main():
                     f" avg iter = {avg_iter:1.4f},",
                     f" max iter = {max_iter:3d}",
                 )
+                print("  ", time_line)
 
             print("  Saving counts.....", end="", flush=True)
             np.savez(
@@ -59,7 +62,10 @@ def count_schwarz_iterations(problem: str, run_dir: str) -> tuple[float]:
             if "Performed" in line:
                 count = int(re.findall(r"\d+", line)[0])
                 counts.append(count)
-    return np.mean(counts), np.max(counts)
+            if "Run Time" in line:
+                time_line = line
+
+    return np.mean(counts), np.max(counts), time_line
 
 
 def test_load(filename):
